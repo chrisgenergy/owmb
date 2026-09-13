@@ -83,6 +83,8 @@ OpenWavAudioProcessorEditor::OpenWavAudioProcessorEditor(
   addChildComponent(performanceComponent);
   addAndMakeVisible(waveformTransport);
 
+  tooltipWindow = std::make_unique<juce::TooltipWindow>(this, 350);
+
   setResizable(true, true);
   setResizeLimits(800, 650, 3840, 2160);
   setSize(1920, 1080);
@@ -173,6 +175,7 @@ OpenWavAudioProcessorEditor::~OpenWavAudioProcessorEditor() {
   tagPanel.removeListener(this);
   sampleTable.removeListener(this);
   sampleCloud.removeListener(this);
+  tooltipWindow.reset();
   if (auto *dw = findParentComponentOfClass<juce::DocumentWindow>()) {
     dw->setLookAndFeel(nullptr);
   }

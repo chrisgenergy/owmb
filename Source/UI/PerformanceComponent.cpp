@@ -82,6 +82,54 @@ static juce::Image getSampleSonicsLogo()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  Rack Overlay Texture Resource Loader
+// ─────────────────────────────────────────────────────────────────────────────
+static juce::Image getRackOverlayTexture()
+{
+    static juce::Image cachedOverlay;
+    static bool attemptedLoad = false;
+
+    if (attemptedLoad && cachedOverlay.isValid())
+        return cachedOverlay;
+
+    attemptedLoad = true;
+
+#if defined(JUCE_BINARYDATA_H_INCLUDED) || __has_include(<BinaryData.h>)
+    int dataSize = 0;
+    const char* data = BinaryData::getNamedResource("overlay_png", dataSize);
+    if (data == nullptr)
+        data = BinaryData::getNamedResource("overlay.png", dataSize);
+
+    if (data != nullptr && dataSize > 0)
+    {
+        cachedOverlay = juce::ImageFileFormat::loadFrom(data, static_cast<size_t>(dataSize));
+        if (cachedOverlay.isValid())
+            return cachedOverlay;
+    }
+#endif
+
+    const juce::String filename = "overlay.png";
+    const juce::File searchPaths[] = {
+        juce::File::getCurrentWorkingDirectory().getChildFile(filename),
+        juce::File::getSpecialLocation(juce::File::currentExecutableFile).getParentDirectory().getChildFile(filename),
+        juce::File::getSpecialLocation(juce::File::currentExecutableFile).getParentDirectory().getParentDirectory().getChildFile("Resources").getChildFile(filename),
+        juce::File("/Users/eoinodowd/Desktop/owmb latest").getChildFile(filename)
+    };
+
+    for (const auto& f : searchPaths)
+    {
+        if (f.existsAsFile())
+        {
+            cachedOverlay = juce::ImageFileFormat::loadFrom(f);
+            if (cachedOverlay.isValid())
+                return cachedOverlay;
+        }
+    }
+
+    return cachedOverlay;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  RackKnobLookAndFeel Implementation
 // ─────────────────────────────────────────────────────────────────────────────
 RackKnobLookAndFeel::RackKnobLookAndFeel()
@@ -394,6 +442,9 @@ void RackUnitComponent::paint(juce::Graphics& g)
     g.setColour(juce::Colours::white.withAlpha(0.06f));
     g.drawRoundedRectangle(bounds.reduced(1.0f), 4.5f, 1.0f);
 
+    // Chassis Overlay Texture (50% opacity)
+    drawRackOverlay(g, bounds);
+
     // 2. 19" Rack Mounting Ears (Left & Right 38px)
     float earWidth = 38.0f;
     juce::Rectangle<float> leftEar(bounds.getX(), bounds.getY(), earWidth, bounds.getHeight());
@@ -452,6 +503,36 @@ void RackUnitComponent::paint(juce::Graphics& g)
         g.setColour(juce::Colours::black.withAlpha(0.35f));
         g.fillRoundedRectangle(bounds.reduced(earWidth, 0.0f), 0.0f);
     }
+}
+
+void RackUnitComponent::drawRackOverlay(juce::Graphics& g, const juce::Rectangle<float>& bounds)
+{
+    auto overlayImg = getRackOverlayTexture();
+    if (!overlayImg.isValid())
+        return;
+
+    int mw = overlayImg.getWidth();
+    int mh = overlayImg.getHeight();
+    if (mw <= 0 || mh <= 0)
+        return;
+
+    g.saveState();
+    juce::Path chassisClip;
+    chassisClip.addRoundedRectangle(bounds, 5.0f);
+    g.reduceClipRegion(chassisClip);
+    g.setOpacity(0.50f);
+
+    float scale = static_cast<float>(mh) / std::max(1.0f, bounds.getHeight());
+    int srcW = std::min(mw, juce::roundToInt(bounds.getWidth() * scale));
+    int srcH = mh;
+    int maxShift = std::max(0, mw - srcW);
+    int srcX = maxShift > 0 ? (index * 211) % maxShift : 0;
+
+    g.drawImage(overlayImg,
+                juce::roundToInt(bounds.getX()), juce::roundToInt(bounds.getY()),
+                juce::roundToInt(bounds.getWidth()), juce::roundToInt(bounds.getHeight()),
+                srcX, 0, srcW, srcH);
+    g.restoreState();
 }
 
 void RackUnitComponent::drawSampleSonicsLogo(juce::Graphics& g, const juce::Rectangle<float>& bounds, float earWidth)

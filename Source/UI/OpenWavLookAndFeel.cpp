@@ -223,6 +223,9 @@ void OpenWavLookAndFeel::drawButtonText(juce::Graphics &g,
                                         bool /*shouldDrawButtonAsHighlighted*/,
                                         bool /*shouldDrawButtonAsDown*/) {
   auto text = button.getButtonText();
+  if (text.isEmpty() && button.getName().isNotEmpty()) {
+      text = button.getName();
+  }
   // Small padding inside the button
   auto bounds = button.getLocalBounds().toFloat().reduced(4.0f, 2.0f);
 
@@ -373,8 +376,8 @@ void OpenWavLookAndFeel::drawButtonText(juce::Graphics &g,
       if (xml != nullptr) {
           auto drawable = juce::Drawable::createFromSVG(*xml);
           if (drawable != nullptr) {
-              if (button.getComponentID() == "editIconBtn") {
-                  float iconSize = 15.0f;
+              if (button.getComponentID() == "editIconBtn" || button.getComponentID() == "headerViewBtn" || button.getComponentID() == "iconOnlyBtn") {
+                  float iconSize = (button.getComponentID() == "headerViewBtn") ? 16.0f : 15.0f;
                   auto iconArea = button.getLocalBounds().toFloat().withSizeKeepingCentre(iconSize, iconSize);
                   drawable->drawWithin(g, iconArea, juce::RectanglePlacement::centred, 1.0f);
                   return;

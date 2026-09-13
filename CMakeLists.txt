@@ -90,6 +90,7 @@ juce_add_binary_data(OpenWavAssets
         "${CMAKE_CURRENT_SOURCE_DIR}/mainpixeldrainlogo_cropped.png"
         "${CMAKE_CURRENT_SOURCE_DIR}/splashit.png"
         "${CMAKE_CURRENT_SOURCE_DIR}/samplesonics.com.png"
+        "${CMAKE_CURRENT_SOURCE_DIR}/overlay.png"
 )
 
 target_sources(OpenWav PRIVATE
@@ -222,7 +223,10 @@ if (APPLE)
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 "${CMAKE_CURRENT_SOURCE_DIR}/samplesonics.com.png"
                 "$<TARGET_FILE_DIR:OpenWav_Standalone>/../Resources/samplesonics.com.png"
-            COMMENT "Updating macOS Standalone Icon.icns and SampleSonics logo asset"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CMAKE_CURRENT_SOURCE_DIR}/overlay.png"
+                "$<TARGET_FILE_DIR:OpenWav_Standalone>/../Resources/overlay.png"
+            COMMENT "Updating macOS Standalone Icon.icns, SampleSonics logo, and overlay assets"
         )
     endif()
     if (TARGET OpenWav_VST3)
@@ -233,7 +237,10 @@ if (APPLE)
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 "${CMAKE_CURRENT_SOURCE_DIR}/samplesonics.com.png"
                 "$<TARGET_FILE_DIR:OpenWav_VST3>/../Resources/samplesonics.com.png"
-            COMMENT "Updating macOS VST3 Icon.icns and SampleSonics logo asset"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CMAKE_CURRENT_SOURCE_DIR}/overlay.png"
+                "$<TARGET_FILE_DIR:OpenWav_VST3>/../Resources/overlay.png"
+            COMMENT "Updating macOS VST3 Icon.icns, SampleSonics logo, and overlay assets"
         )
     endif()
     if (TARGET OpenWav_AU)
@@ -244,7 +251,10 @@ if (APPLE)
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 "${CMAKE_CURRENT_SOURCE_DIR}/samplesonics.com.png"
                 "$<TARGET_FILE_DIR:OpenWav_AU>/../Resources/samplesonics.com.png"
-            COMMENT "Updating macOS AU Icon.icns and SampleSonics logo asset"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CMAKE_CURRENT_SOURCE_DIR}/overlay.png"
+                "$<TARGET_FILE_DIR:OpenWav_AU>/../Resources/overlay.png"
+            COMMENT "Updating macOS AU Icon.icns, SampleSonics logo, and overlay assets"
         )
     endif()
 endif()

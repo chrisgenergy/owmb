@@ -60,23 +60,25 @@ HeaderBarComponent::HeaderBarComponent(TagDatabaseManager& db, LibraryScanner& s
 
     btnAll.setToggleState(true, juce::dontSendNotification);
 
-    // View Switcher (List vs Cloud vs Library vs Record vs Analysis vs Edit vs Sample Map)
-    btnListView.onClick = [this] { setViewMode(ViewMode::List); };
-    btnCloudView.onClick = [this] { setViewMode(ViewMode::Cloud); };
-    btnLibrariesView.onClick = [this] { setViewMode(ViewMode::Libraries); };
-    btnRecordView.onClick = [this] { setViewMode(ViewMode::Record); };
-    btnAnalysisView.onClick = [this] { setViewMode(ViewMode::Analysis); };
-    btnEditView.onClick = [this] { setViewMode(ViewMode::Edit); };
-    btnSampleMapView.onClick = [this] { setViewMode(ViewMode::SampleMap); };
-    btnPerformanceView.onClick = [this] { setViewMode(ViewMode::Performance); };
-    addAndMakeVisible(btnListView);
-    addAndMakeVisible(btnCloudView);
-    addAndMakeVisible(btnLibrariesView);
-    addAndMakeVisible(btnRecordView);
-    addAndMakeVisible(btnAnalysisView);
-    addAndMakeVisible(btnEditView);
-    addAndMakeVisible(btnSampleMapView);
-    addAndMakeVisible(btnPerformanceView);
+    // View Switcher (List vs Cloud vs Library vs Record vs Analysis vs Edit vs Sample Map vs Rack)
+    auto setupViewBtn = [this](juce::TextButton& btn, const juce::String& viewName, const juce::String& tooltipText, ViewMode mode) {
+        btn.setComponentID("headerViewBtn");
+        btn.setName(viewName);
+        btn.setButtonText(viewName);
+        btn.setTooltip(tooltipText);
+        btn.onClick = [this, mode] { setViewMode(mode); };
+        addAndMakeVisible(btn);
+    };
+
+    setupViewBtn(btnListView, "List", "List View", ViewMode::List);
+    setupViewBtn(btnCloudView, "Cloud", "Cloud View", ViewMode::Cloud);
+    setupViewBtn(btnLibrariesView, "Library", "Library View", ViewMode::Libraries);
+    setupViewBtn(btnRecordView, "Record", "Record View", ViewMode::Record);
+    setupViewBtn(btnAnalysisView, "Analysis", "Analysis View", ViewMode::Analysis);
+    setupViewBtn(btnEditView, "Edit", "Edit View", ViewMode::Edit);
+    setupViewBtn(btnSampleMapView, "Sample Map", "Sample Map View", ViewMode::SampleMap);
+    setupViewBtn(btnPerformanceView, "Rack", "Rack View", ViewMode::Performance);
+
     btnListView.setToggleState(true, juce::dontSendNotification);
 }
 
@@ -116,7 +118,7 @@ void HeaderBarComponent::resized()
     area.removeFromLeft(20);
 
     // 3. Dynamic Search Editor
-    int searchWidth = juce::jlimit(110, 160, (area.getWidth() - 1140) / 2 + 110);
+    int searchWidth = juce::jlimit(140, 260, (area.getWidth() - 790) / 2 + 140);
     searchEditor.setBounds(area.removeFromLeft(searchWidth).withHeight(btnHeight));
     area.removeFromLeft(10);
 
@@ -136,21 +138,22 @@ void HeaderBarComponent::resized()
     area.removeFromLeft(10);
 
     // 5. View Mode Toggle (List, Cloud, Library, Record, Analysis, Edit, Sample Map, Performance)
-    btnListView.setBounds(area.removeFromLeft(62).withHeight(btnHeight));
+    const int viewBtnWidth = 34;
+    btnListView.setBounds(area.removeFromLeft(viewBtnWidth).withHeight(btnHeight));
     area.removeFromLeft(gap);
-    btnCloudView.setBounds(area.removeFromLeft(72).withHeight(btnHeight));
+    btnCloudView.setBounds(area.removeFromLeft(viewBtnWidth).withHeight(btnHeight));
     area.removeFromLeft(gap);
-    btnLibrariesView.setBounds(area.removeFromLeft(82).withHeight(btnHeight));
+    btnLibrariesView.setBounds(area.removeFromLeft(viewBtnWidth).withHeight(btnHeight));
     area.removeFromLeft(gap);
-    btnRecordView.setBounds(area.removeFromLeft(78).withHeight(btnHeight));
+    btnRecordView.setBounds(area.removeFromLeft(viewBtnWidth).withHeight(btnHeight));
     area.removeFromLeft(gap);
-    btnAnalysisView.setBounds(area.removeFromLeft(88).withHeight(btnHeight));
+    btnAnalysisView.setBounds(area.removeFromLeft(viewBtnWidth).withHeight(btnHeight));
     area.removeFromLeft(gap);
-    btnEditView.setBounds(area.removeFromLeft(62).withHeight(btnHeight));
+    btnEditView.setBounds(area.removeFromLeft(viewBtnWidth).withHeight(btnHeight));
     area.removeFromLeft(gap);
-    btnSampleMapView.setBounds(area.removeFromLeft(106).withHeight(btnHeight));
+    btnSampleMapView.setBounds(area.removeFromLeft(viewBtnWidth).withHeight(btnHeight));
     area.removeFromLeft(gap);
-    btnPerformanceView.setBounds(area.removeFromLeft(72).withHeight(btnHeight));
+    btnPerformanceView.setBounds(area.removeFromLeft(viewBtnWidth).withHeight(btnHeight));
 }
 
 void HeaderBarComponent::textEditorTextChanged(juce::TextEditor& editor)

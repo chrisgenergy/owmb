@@ -94,6 +94,7 @@ public:
     void syncKnobValues();
 
 private:
+    void drawRackOverlay(juce::Graphics& g, const juce::Rectangle<float>& bounds);
     void drawSampleSonicsLogo(juce::Graphics& g, const juce::Rectangle<float>& bounds, float earWidth);
 
     std::shared_ptr<RackEffectBase> effect;
