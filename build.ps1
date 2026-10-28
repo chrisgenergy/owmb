@@ -82,7 +82,7 @@ if ($LASTEXITCODE -ne 0) {
 
 # 3. Build target
 Write-Host "Compiling OpenWav (VST3 & Standalone)..." -ForegroundColor Cyan
-& $cmakePath --build build --config Release
+& $cmakePath --build build --config Release -- /v:m /m:1 /nr:false /p:UseMultiToolTask=true /p:EnforceProcessCountAcrossBuilds=true
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "Build Succeeded!" -ForegroundColor Green
@@ -95,8 +95,8 @@ if ($LASTEXITCODE -eq 0) {
     Get-ChildItem -Path "build" -Recurse -File -Filter "OpenWav Media Browser.exe" | Where-Object { $_.FullName -match 'Release' } | ForEach-Object { Copy-Item -Path $_.FullName -Destination "dist\OWMB-Windows-11-x64\OWMB.exe" -Force }
 
     if (Test-Path "dist\OWMB-Windows-11-x64\OWMB.exe") {
-        Copy-Item -Path "dist\OWMB-Windows-11-x64\OWMB.exe" -Destination "OWMB-MicrosoftStore-Standalone.exe" -Force
-        Copy-Item -Path "dist\OWMB-Windows-11-x64\OWMB.exe" -Destination "OWMB.exe" -Force
+        Copy-Item -Path "dist\OWMB-Windows-11-x64\OWMB.exe" -Destination "dist\OWMB-MicrosoftStore-Standalone.exe" -Force
+        Copy-Item -Path "dist\OWMB-Windows-11-x64\OWMB.exe" -Destination "dist\OWMB.exe" -Force
     }
 
     $iscc = (Get-Command iscc -ErrorAction SilentlyContinue).Source
@@ -106,13 +106,13 @@ if ($LASTEXITCODE -eq 0) {
 
     if ($iscc) {
         Write-Host "Building Windows Installer via Inno Setup..." -ForegroundColor Cyan
-        & $iscc installer.iss
-        if (Test-Path "OWMB-Installer.exe") {
-            Copy-Item -Path "OWMB-Installer.exe" -Destination "OWMB-MicrosoftStore-Installer.exe" -Force
-            Write-Host "Installer Executable: OWMB-Installer.exe" -ForegroundColor Green
-            Write-Host "Microsoft Store Installer: OWMB-MicrosoftStore-Installer.exe" -ForegroundColor Green
+        & $iscc /O"dist" installer.iss
+        if (Test-Path "dist\OWMB-Installer.exe") {
+            Copy-Item -Path "dist\OWMB-Installer.exe" -Destination "dist\OWMB-MicrosoftStore-Installer.exe" -Force
+            Write-Host "Installer Executable: dist\OWMB-Installer.exe" -ForegroundColor Green
+            Write-Host "Microsoft Store Installer: dist\OWMB-MicrosoftStore-Installer.exe" -ForegroundColor Green
         } else {
-            Write-Host "ERROR: OWMB-Installer.exe was not created by Inno Setup." -ForegroundColor Red
+            Write-Host "ERROR: dist\OWMB-Installer.exe was not created by Inno Setup." -ForegroundColor Red
         }
     } else {
         Write-Host "Note: Inno Setup (ISCC.exe) not found. Skipping installer creation." -ForegroundColor Yellow
@@ -158,9 +158,9 @@ if ($LASTEXITCODE -eq 0) {
         Copy-Item -Path "msix\AppxManifest.xml" -Destination "$msixLayout\AppxManifest.xml" -Force
         Copy-Item -Path "msix\Assets" -Destination "$msixLayout\Assets" -Recurse -Force
 
-        & $makeappx pack /d $msixLayout /p "OWMB.msix" /o
-        if (Test-Path "OWMB.msix") {
-            Write-Host "MSIX Package Created: OWMB.msix" -ForegroundColor Green
+        & $makeappx pack /d $msixLayout /p "dist\OWMB.msix" /o
+        if (Test-Path "dist\OWMB.msix") {
+            Write-Host "MSIX Package Created: dist\OWMB.msix" -ForegroundColor Green
 
             if ($signtool) {
                 Write-Host "Signing MSIX Package..." -ForegroundColor Cyan
@@ -170,7 +170,7 @@ if ($LASTEXITCODE -eq 0) {
                     $cert = New-SelfSignedCertificate -Type Custom -Subject "CN=2AD133D7-BD45-4E2F-B530-93A406A2D383" -KeyUsage DigitalSignature -FriendlyName "OWMB Store Dev Cert" -CertStoreLocation "Cert:\CurrentUser\My"
                 }
                 if ($cert) {
-                    & $signtool sign /fd SHA256 /sha1 $cert.Thumbprint "OWMB.msix"
+                    & $signtool sign /fd SHA256 /sha1 $cert.Thumbprint "dist\OWMB.msix"
                     if ($LASTEXITCODE -eq 0) {
                         Write-Host "MSIX Package Signed Successfully!" -ForegroundColor Green
                     } else {
@@ -181,7 +181,7 @@ if ($LASTEXITCODE -eq 0) {
                 Write-Host "Note: signtool.exe not found. MSIX created unsigned." -ForegroundColor Yellow
             }
         } else {
-            Write-Host "ERROR: OWMB.msix was not created." -ForegroundColor Red
+            Write-Host "ERROR: dist\OWMB.msix was not created." -ForegroundColor Red
         }
     } else {
         if (-not $makeappx) {
@@ -189,7 +189,12 @@ if ($LASTEXITCODE -eq 0) {
         }
     }
 
-    Write-Host "Standalone Executable: OWMB-MicrosoftStore-Standalone.exe" -ForegroundColor Yellow
+    # 5. Create zip bundle
+    if (Test-Path "dist\OWMB-Windows-11-x64") {
+        Compress-Archive -Path "dist\OWMB-Windows-11-x64\*" -DestinationPath "dist\OWMB-Windows-11-x64.zip" -Force
+    }
+
+    Write-Host "All build outputs placed in dist\" -ForegroundColor Green
 } else {
     Write-Host "Build failed during compilation." -ForegroundColor Red
 }

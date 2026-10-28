@@ -1,6 +1,7 @@
 # Build artifacts
 /build/
 /dist/
+/local-build/
 *.exe
 *.vst3
 *.msix
