@@ -1136,17 +1136,34 @@ juce::String TagDatabaseManager::getCanonicalCategoryForItem(const MediaItem& it
         return "other";
     }
 
-    // Drum Beat vs legacy false-positive #Bass override:
-    // If an item is a beat/drum/kit groove and does NOT have "bass" in its filename, it must NEVER be placed in "bass"!
-    bool isBeatOrDrum = (item.fileName.containsIgnoreCase("beat") || item.fileName.containsIgnoreCase("drum") ||
-                         item.fileName.containsIgnoreCase("kit") || item.fileName.containsIgnoreCase("groove") ||
-                         item.fileName.containsIgnoreCase("break") ||
-                         item.filePath.containsIgnoreCase("drums") || item.filePath.containsIgnoreCase("drum loop"));
-    bool explicitlyHasBassInName = item.fileName.containsIgnoreCase("bass");
-    if (isBeatOrDrum && !explicitlyHasBassInName)
+    // Helper: Determine if a sample is genuinely a drum beat / groove loop that was misclassified as bass or synth
+    auto isMisclassifiedBeat = [&](const juce::String& cat) -> bool
     {
-        return "loop";
-    }
+        if (cat != "bass" && cat != "synth")
+            return false;
+
+        const juce::String fn = item.fileName.toLowerCase();
+        // If the filename explicitly mentions bass (and not "bass drum" or "bassdrum"), keep bass!
+        if (fn.contains("bass") && !fn.contains("bass drum") && !fn.contains("bassdrum") && !fn.contains("bass_drum"))
+            return false;
+
+        // Filename has clear drum loop indicators: "beat", "drumkit", "groove", "breakbeat", "drum loop"
+        if (fn.contains("beat") || fn.contains("drumkit") || fn.contains("groove") ||
+            fn.contains("breakbeat") || fn.contains("drumloop") || fn.contains("drum loop"))
+        {
+            return true;
+        }
+
+        // Folder is explicitly a loop folder with drums/beats/grooves (and duration >= 1.5s)
+        const juce::String fp = item.filePath.toLowerCase();
+        if (item.durationSeconds >= 1.5 && (fp.contains("drum loop") || (fp.contains("loop") && fp.contains("drum")) ||
+                                            fp.contains("drum rack") || fp.contains("grooves")))
+        {
+            return true;
+        }
+
+        return false;
+    };
 
     // 1. Evaluate using strict priority order (never alphabetical std::set iteration!)
     if (!item.tags.empty())
@@ -1156,7 +1173,11 @@ juce::String TagDatabaseManager::getCanonicalCategoryForItem(const MediaItem& it
         {
             juce::String cat = getCanonicalCategory(primary);
             if (cat != "other")
+            {
+                if (isMisclassifiedBeat(cat))
+                    return "loop";
                 return cat;
+            }
         }
         // Handle standalone #808 or #Loop when no specific instrument tag is present
         if (primary == "#808") return "bass";
@@ -1172,7 +1193,11 @@ juce::String TagDatabaseManager::getCanonicalCategoryForItem(const MediaItem& it
         {
             juce::String cat = getCanonicalCategory(primary);
             if (cat != "other")
+            {
+                if (isMisclassifiedBeat(cat))
+                    return "loop";
                 return cat;
+            }
         }
     }
 
@@ -1186,7 +1211,11 @@ juce::String TagDatabaseManager::getCanonicalCategoryForItem(const MediaItem& it
         {
             juce::String cat = getCanonicalCategory(primary);
             if (cat != "other")
+            {
+                if (isMisclassifiedBeat(cat))
+                    return "loop";
                 return cat;
+            }
         }
     }
 
@@ -1859,12 +1888,9 @@ std::set<juce::String> TagDatabaseManager::inferTagsFromPath(const juce::String&
         { "drum_kit", "#DrumLoop", true }, { "drum_kits", "#DrumLoop", true },
         { "drum-kit", "#DrumLoop", true }, { "drum-kits", "#DrumLoop", true },
         { "drum kit", "#DrumLoop", true }, { "drum kits", "#DrumLoop", true },
-        { "kit", "#DrumLoop", true }, { "kits", "#DrumLoop", true },
-        { "drums", "#DrumLoop", true }, { "drum", "#DrumLoop", true },
         { "beat", "#DrumLoop", true }, { "beats", "#DrumLoop", true },
         { "breakbeat", "#DrumLoop", true }, { "breakbeats", "#DrumLoop", true },
         { "break_beat", "#DrumLoop", true }, { "break-beat", "#DrumLoop", true },
-        { "break", "#DrumLoop", true }, { "breaks", "#DrumLoop", true },
         { "groove", "#DrumLoop", true }, { "grooves", "#DrumLoop", true },
         { "toploop", "#TopLoop", true }, { "toploops", "#TopLoop", true },
         { "top_loop", "#TopLoop", true }, { "top_loops", "#TopLoop", true },
