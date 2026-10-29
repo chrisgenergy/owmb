@@ -234,15 +234,13 @@ To ensure that nodes in dense categories (e.g. 500+ kicks or snares) do not visu
 
 ---
 
-### 4.4 In-Constellation Category Labels & Proximity Fade
-* **Cosmic Radial Vignette Backdrop**:
-  - Each cluster label is backed by an elliptical radial dark gradient (`rgba(8, 9, 12, 0.88)` tapering smoothly to transparent) behind the white typography.
-  - Solves white-on-bright contrast issues across highly luminous clusters (especially bright yellow Hi-Hats, cyan Cymbals/Rides, and light green Shakers).
-* **Interactive Mouse Proximity Fade (140 px Threshold)**:
-  - From a distance ($> 140$ px), the label and its soft cosmic vignette remain fully visible for effortless spatial navigation.
-  - As the mouse cursor approaches within 140 px of the cluster label, the label smoothly fades out using a cubic Hermite smoothstep curve.
-  - Within 35 px of the cluster center, the label becomes 100% transparent, exposing all individual sample dots underneath with zero visual occlusion for hover auditioning and click selection.
-  - Moving the cursor away gently restores the label to full opacity.
+### 4.4 In-Constellation Category Labels & 360° Dark Halo
+* **High-Contrast Omnidirectional 360° Dark Halo**:
+  - Each cluster label is rendered with an 8-way dark charcoal/black outline (`#08090C` at 92% alpha) and a subtle downward grounding shadow directly beneath the crisp white typography.
+  - Solves white-on-bright luminance collision on yellow (Hi-Hat), cyan (Cymbal/Ride), and green (Shaker) clusters without introducing rectangular bounding boxes, vignettes, or visual canvas clutter.
+  - Keeps the typography floating freely and permanently legible from any distance or camera angle.
+* **Zero Performance Overhead**:
+  - Leverages hardware-accelerated font glyph caching without CPU-intensive software radial gradient rasterization, ensuring silky smooth, lag-free 60–144+ FPS cursor responsiveness across the entire canvas.
 
 ---
 

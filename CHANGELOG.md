@@ -25,9 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   * Incremented binary cache format version to `13` in `SampleCloudComponent` (`loadLayoutFromCache`, `saveLayoutToCache`, and auto-pruning passes) to automatically purge obsolete layouts containing displaced one-shots and compute clean, overlap-free coordinates.
 
 ### Added
-* **Cluster Label Cosmic Vignette & Interactive 140px Proximity Fade (`SampleCloudComponent`)**:
-  * **Contrast Enhancement**: Rendered in-constellation category titles with an elliptical radial dark gradient backdrop (`rgba(8, 9, 12, 0.88)` tapering to transparent), resolving white-on-bright luminance collision on yellow (Hi-Hat), cyan (Cymbal/Ride), and green (Shaker) clusters.
-  * **Proximity Fade-Out (140 px Threshold)**: Cluster labels automatically track mouse proximity. As the cursor approaches within 140 px, labels smoothly attenuate to 0% opacity (complete transparency within 35 px) via Hermite smoothstep interpolation, providing unobstructed visibility and clickability for sample dots directly underneath. Labels smoothly re-appear upon cursor retreat.
+* **Cluster Label Omnidirectional 360° Dark Halo (`SampleCloudComponent`)**:
+  * **Contrast Enhancement**: Implemented an 8-way dark charcoal outline (`#08090C` at 92% alpha) and grounding shadow around white in-constellation category titles. Resolves white-on-bright luminance collision on yellow (Hi-Hat), cyan (Cymbal/Ride), and green (Shaker) clusters without introducing box artifacts or visual clutter.
+  * **Zero-Overhead Performance**: Preserves pure floating typography with zero CPU overhead, eliminating event queue bottlenecks and ensuring silky smooth, lag-free cursor tracking across categories.
 * **Technical & Behavioral Map Specification (`docs/SAMPLE_MAP_BEHAVIOR.md`)**:
   * Authored a comprehensive technical reference and behavioral specification covering the 3-tier categorization engine, priority hierarchy, 2D/3D intra-cluster timbral physics, collision avoidance relaxation, interaction models, and visual color palettes.
 
