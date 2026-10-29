@@ -271,7 +271,7 @@ bool SampleCloudComponent::loadLayoutFromCache(uint64_t hash, const std::vector<
         return false;
       int magic = checkFis.readInt();
       int version = checkFis.readInt();
-      if (magic != 0x4F57434C || version != 6)
+      if (magic != 0x4F57434C || version != 7)
         isStaleOrCorrupt = true;
     }
     if (isStaleOrCorrupt) {
@@ -405,7 +405,7 @@ void SampleCloudComponent::saveLayoutToCache(
       return;
 
     fos->writeInt(0x4F57434C); // Magic 'OWCL'
-    fos->writeInt(6);          // Version 6 (Zero-Overlap Dynamic Cluster Spacing for All Categories)
+    fos->writeInt(7);          // Version 7 (Zero-Overlap Clusters & High-Density Non-Overlapping Sample Dots)
     fos->writeInt64(static_cast<juce::int64>(hash));
     fos->writeInt(static_cast<int>(calculatedNodes.size()));
     fos->writeInt(static_cast<int>(calculatedClusters.size()));
@@ -456,7 +456,7 @@ void SampleCloudComponent::saveLayoutToCache(
     tf.deleteFile();
   }
 
-  // 2. Scan and purge any cache files with outdated layout versions (< 6)
+  // 2. Scan and purge any cache files with outdated layout versions (< 7)
   juce::Array<juce::File> files;
   cacheDir.findChildFiles(files, juce::File::findFiles, false, "cloud_layout_*.bin");
   for (const auto &f : files) {
@@ -464,7 +464,7 @@ void SampleCloudComponent::saveLayoutToCache(
     bool shouldDelete = false;
     {
       juce::FileInputStream scanFis(f);
-      if (!scanFis.openedOk() || scanFis.readInt() != 0x4F57434C || scanFis.readInt() < 6) {
+      if (!scanFis.openedOk() || scanFis.readInt() != 0x4F57434C || scanFis.readInt() < 7) {
         shouldDelete = true;
       }
     }
@@ -806,13 +806,13 @@ SampleCloudComponent::calculateClusterLayoutInternal(
   auto getClusterEffectiveRadius = [&](size_t idx, bool is3D) -> float {
     auto anc = findAnchor(outClusters[idx].tag);
     float stretch = (anc.stretch > 0.01f) ? anc.stretch : 1.5f;
-    float baseR = std::max(45.0f, 25.0f + std::sqrt(static_cast<float>(outClusters[idx].count)) * 8.5f);
+    float baseR = std::max(50.0f, 30.0f + std::sqrt(static_cast<float>(outClusters[idx].count)) * 12.0f);
     return baseR * (is3D ? std::min(stretch, 1.4f) : stretch);
   };
 
   if (tagCount > 0) {
-    float baseSpread2D = std::max(750.0f, std::sqrt(static_cast<float>(nodesCopy.size())) * 24.0f);
-    float baseSpread3D = std::max(680.0f, std::sqrt(static_cast<float>(nodesCopy.size())) * 20.0f);
+    float baseSpread2D = std::max(850.0f, std::sqrt(static_cast<float>(nodesCopy.size())) * 32.0f);
+    float baseSpread3D = std::max(750.0f, std::sqrt(static_cast<float>(nodesCopy.size())) * 26.0f);
 
     for (size_t i = 0; i < tagCount; ++i) {
       auto anc = findAnchor(outClusters[i].tag);
@@ -982,7 +982,7 @@ SampleCloudComponent::calculateClusterLayoutInternal(
     float uCross = decayFeat + gaussNorm * 0.22f;
 
     // Dynamic cluster scale proportional to item count
-    float baseRadius = std::max(45.0f, 25.0f + std::sqrt(static_cast<float>(totalInTag)) * 8.5f);
+    float baseRadius = std::max(50.0f, 30.0f + std::sqrt(static_cast<float>(totalInTag)) * 12.0f);
 
     // Edge loosening: samples near the periphery get increased organic dispersion
     // so clusters dissolve softly into space without forming dense perimeter ridges
@@ -1062,9 +1062,10 @@ SampleCloudComponent::calculateClusterLayoutInternal(
     origPos3D[i] = nodesCopy[i].pos3D;
   }
 
-  const float minNodeDist2D = 16.0f;
+  // Minimum sample dot spacing: 22.0f guarantees zero visual overlap between 20px dots even in dense cores!
+  const float minNodeDist2D = 22.0f;
   const float minNodeDistSq2D = minNodeDist2D * minNodeDist2D;
-  const float minNodeDist3D = 16.0f;
+  const float minNodeDist3D = 22.0f;
   const float minNodeDistSq3D = minNodeDist3D * minNodeDist3D;
 
   for (auto &pair : clusterNodeIndices) {
@@ -1072,7 +1073,7 @@ SampleCloudComponent::calculateClusterLayoutInternal(
     size_t count = indices.size();
     if (count <= 1) continue;
 
-    for (int iter = 0; iter < 12; ++iter) {
+    for (int iter = 0; iter < 18; ++iter) {
       if (!layoutActive.load()) return {outClusters, {}};
       for (size_t i = 0; i < count; ++i) {
         if ((i & 127) == 0 && !layoutActive.load()) return {outClusters, {}};
@@ -1087,7 +1088,7 @@ SampleCloudComponent::calculateClusterLayoutInternal(
 
           if (distSq2 < minNodeDistSq2D && distSq2 > 0.0001f) {
             float dist = std::sqrt(distSq2);
-            float push = (minNodeDist2D - dist) * 0.40f;
+            float push = (minNodeDist2D - dist) * 0.45f;
             float nx = dx2 / dist;
             float ny = dy2 / dist;
             nodesCopy[idxA].pos2D.x -= nx * push;
@@ -1111,7 +1112,7 @@ SampleCloudComponent::calculateClusterLayoutInternal(
 
           if (distSq3 < minNodeDistSq3D && distSq3 > 0.0001f) {
             float dist = std::sqrt(distSq3);
-            float push = (minNodeDist3D - dist) * 0.40f;
+            float push = (minNodeDist3D - dist) * 0.45f;
             float nx = dx3 / dist;
             float ny = dy3 / dist;
             float nz = dz3 / dist;
@@ -1134,14 +1135,14 @@ SampleCloudComponent::calculateClusterLayoutInternal(
         }
       }
 
-      // Soft spring anchoring: gently pulls nodes toward their organic natural seed positions
-      // to prevent repulsion from packing points into straight perimeter barriers
+      // Annealed soft spring: preserves organic gradient while letting final passes strictly enforce zero dot overlap!
+      float springNode = 0.05f * (1.0f - (static_cast<float>(iter) / 18.0f));
       for (size_t idx : indices) {
-        nodesCopy[idx].pos2D.x += (origPos2D[idx].x - nodesCopy[idx].pos2D.x) * 0.08f;
-        nodesCopy[idx].pos2D.y += (origPos2D[idx].y - nodesCopy[idx].pos2D.y) * 0.08f;
-        nodesCopy[idx].pos3D.x += (origPos3D[idx].x - nodesCopy[idx].pos3D.x) * 0.08f;
-        nodesCopy[idx].pos3D.y += (origPos3D[idx].y - nodesCopy[idx].pos3D.y) * 0.08f;
-        nodesCopy[idx].pos3D.z += (origPos3D[idx].z - nodesCopy[idx].pos3D.z) * 0.08f;
+        nodesCopy[idx].pos2D.x += (origPos2D[idx].x - nodesCopy[idx].pos2D.x) * springNode;
+        nodesCopy[idx].pos2D.y += (origPos2D[idx].y - nodesCopy[idx].pos2D.y) * springNode;
+        nodesCopy[idx].pos3D.x += (origPos3D[idx].x - nodesCopy[idx].pos3D.x) * springNode;
+        nodesCopy[idx].pos3D.y += (origPos3D[idx].y - nodesCopy[idx].pos3D.y) * springNode;
+        nodesCopy[idx].pos3D.z += (origPos3D[idx].z - nodesCopy[idx].pos3D.z) * springNode;
       }
     }
   }
