@@ -2040,12 +2040,53 @@ void SampleCloudComponent::paintOverlay(juce::Graphics &g) {
 
           if (labelBounds.getRight() > 0 && labelBounds.getX() < effW &&
               labelBounds.getBottom() > 0 && labelBounds.getY() < effH - 60.0f) {
-            // Subtle dark drop-shadow for high contrast against stars
-            g.setColour(juce::Colour::fromRGB(12, 13, 15).withAlpha(0.85f * revealAlpha));
-            g.drawText(labelText, labelBounds.translated(0.0f, 1.5f), juce::Justification::centred);
+
+            // Option 3: Proximity fade calculation (140 px proximity threshold)
+            const float maxProximity = 140.0f;
+            const float minProximity = 35.0f; // Inside 35px, 100% transparent (dots completely visible)
+            float fadeFactor = 1.0f;
+            if (isMouseInsideMap) {
+              float dist = currentMousePos.getDistanceFrom({sx, sy});
+              if (dist <= minProximity) {
+                fadeFactor = 0.0f;
+              } else if (dist < maxProximity) {
+                float t = (dist - minProximity) / (maxProximity - minProximity);
+                fadeFactor = t * t * (3.0f - 2.0f * t); // Smooth Hermite curve
+              }
+            }
+
+            float effectiveAlpha = revealAlpha * fadeFactor;
+            if (effectiveAlpha <= 0.01f)
+              continue;
+
+            // Cosmic Radial Shadow Vignette Backdrop
+            float rX = textW * 0.5f + 16.0f;
+            float rY = textH * 0.5f + 9.0f;
+            float maxR = std::max(rX, rY);
+
+            juce::ColourGradient grad(
+                juce::Colour::fromRGB(8, 9, 12).withAlpha(0.88f * effectiveAlpha),
+                sx, sy,
+                juce::Colour::fromRGB(8, 9, 12).withAlpha(0.0f),
+                sx + maxR, sy,
+                true);
+            grad.addColour(0.40, juce::Colour::fromRGB(8, 9, 12).withAlpha(0.65f * effectiveAlpha));
+            grad.addColour(0.75, juce::Colour::fromRGB(8, 9, 12).withAlpha(0.20f * effectiveAlpha));
+
+            g.saveState();
+            g.addTransform(juce::AffineTransform::translation(-sx, -sy)
+                               .scaled(1.0f, rY / rX)
+                               .translated(sx, sy));
+            g.setGradientFill(grad);
+            g.fillEllipse(sx - rX, sy - rX, rX * 2.0f, rX * 2.0f);
+            g.restoreState();
+
+            // Subtle dark grounding shadow for high contrast
+            g.setColour(juce::Colour::fromRGB(8, 9, 12).withAlpha(0.85f * effectiveAlpha));
+            g.drawText(labelText, labelBounds.translated(0.0f, 1.2f), juce::Justification::centred);
 
             // Clean Atlas 2 bold white title
-            g.setColour(juce::Colours::white.withAlpha(0.95f * revealAlpha));
+            g.setColour(juce::Colours::white.withAlpha(0.95f * effectiveAlpha));
             g.drawText(labelText, labelBounds, juce::Justification::centred);
           }
         }
@@ -2994,6 +3035,8 @@ void SampleCloudComponent::mouseDown(const juce::MouseEvent &e) {
 }
 
 void SampleCloudComponent::mouseDrag(const juce::MouseEvent &e) {
+  currentMousePos = e.position;
+  isMouseInsideMap = true;
   if (layoutPending)
     return;
   // If dragging a sample from the floating dock: initiate external drag-and-drop to DAW!
@@ -3107,6 +3150,8 @@ void SampleCloudComponent::mouseUp(const juce::MouseEvent &e) {
 void SampleCloudComponent::mouseMove(const juce::MouseEvent &e) {
   if (layoutPending)
     return;
+  currentMousePos = e.position;
+  isMouseInsideMap = true;
   // Check hover over dock components
   bool onDock = false;
   hoveredSimilarIndex = -100;
@@ -3216,6 +3261,8 @@ void SampleCloudComponent::mouseMove(const juce::MouseEvent &e) {
       targetHoverScale = 1.0f;
       overlayComponent.setMouseCursor(juce::MouseCursor::NormalCursor);
     }
+    overlayComponent.repaint();
+  } else {
     overlayComponent.repaint();
   }
 }
@@ -3334,6 +3381,8 @@ int SampleCloudComponent::findHitNodeAt(juce::Point<float> pos) const {
 
 void SampleCloudComponent::mouseExit(const juce::MouseEvent &e) {
   juce::ignoreUnused(e);
+  isMouseInsideMap = false;
+  currentMousePos = { -1000.0f, -1000.0f };
   hoveredNodeIndex = -1;
   targetHoverScale = 1.0f;
   hoveredSimilarIndex = -100;

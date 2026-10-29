@@ -181,6 +181,8 @@ private:
     float dragStartRotY { 0.0f };
     bool isPanning { false };
     bool isRotating { false };
+    juce::Point<float> currentMousePos { -1000.0f, -1000.0f };
+    bool isMouseInsideMap { false };
 
     juce::TextButton zoomInButton    { "+" };
     juce::TextButton zoomOutButton   { "-" };

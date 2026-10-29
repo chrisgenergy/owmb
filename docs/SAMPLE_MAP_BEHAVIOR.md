@@ -234,6 +234,18 @@ To ensure that nodes in dense categories (e.g. 500+ kicks or snares) do not visu
 
 ---
 
+### 4.4 In-Constellation Category Labels & Proximity Fade
+* **Cosmic Radial Vignette Backdrop**:
+  - Each cluster label is backed by an elliptical radial dark gradient (`rgba(8, 9, 12, 0.88)` tapering smoothly to transparent) behind the white typography.
+  - Solves white-on-bright contrast issues across highly luminous clusters (especially bright yellow Hi-Hats, cyan Cymbals/Rides, and light green Shakers).
+* **Interactive Mouse Proximity Fade (140 px Threshold)**:
+  - From a distance ($> 140$ px), the label and its soft cosmic vignette remain fully visible for effortless spatial navigation.
+  - As the mouse cursor approaches within 140 px of the cluster label, the label smoothly fades out using a cubic Hermite smoothstep curve.
+  - Within 35 px of the cluster center, the label becomes 100% transparent, exposing all individual sample dots underneath with zero visual occlusion for hover auditioning and click selection.
+  - Moving the cursor away gently restores the label to full opacity.
+
+---
+
 ## 5. Performance, Threading & Caching Architecture
 
 Computing physics layouts across libraries with 5,000–50,000+ samples involves hundreds of thousands of distance calculations. To ensure a 60 FPS user interface, the layout system is completely decoupled from the main thread.
@@ -342,3 +354,4 @@ When testing or troubleshooting the map, verify against these key edge-case beha
    - *Expected*: Dummy files like `Silent.aif` or samples under 5 ms must land in **`other`** and are placed far in the periphery, never inside the active `loop` or `kick` nebulas.
 6. **High Sample Density (1,000+ samples per category)**:
    - *Expected*: The cluster boundary expands automatically. Nodes maintain a visible gap and do not stack or clip on top of one another.
+
