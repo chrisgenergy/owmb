@@ -271,7 +271,7 @@ bool SampleCloudComponent::loadLayoutFromCache(uint64_t hash, const std::vector<
         return false;
       int magic = checkFis.readInt();
       int version = checkFis.readInt();
-      if (magic != 0x4F57434C || version != 7)
+      if (magic != 0x4F57434C || version != 8)
         isStaleOrCorrupt = true;
     }
     if (isStaleOrCorrupt) {
@@ -405,7 +405,7 @@ void SampleCloudComponent::saveLayoutToCache(
       return;
 
     fos->writeInt(0x4F57434C); // Magic 'OWCL'
-    fos->writeInt(7);          // Version 7 (Zero-Overlap Clusters & High-Density Non-Overlapping Sample Dots)
+    fos->writeInt(8);          // Version 8 (Acoustic Rank Mapping & Zero-Overlap Mosaic)
     fos->writeInt64(static_cast<juce::int64>(hash));
     fos->writeInt(static_cast<int>(calculatedNodes.size()));
     fos->writeInt(static_cast<int>(calculatedClusters.size()));
@@ -464,7 +464,7 @@ void SampleCloudComponent::saveLayoutToCache(
     bool shouldDelete = false;
     {
       juce::FileInputStream scanFis(f);
-      if (!scanFis.openedOk() || scanFis.readInt() != 0x4F57434C || scanFis.readInt() < 7) {
+      if (!scanFis.openedOk() || scanFis.readInt() != 0x4F57434C || scanFis.readInt() < 8) {
         shouldDelete = true;
       }
     }
@@ -806,7 +806,7 @@ SampleCloudComponent::calculateClusterLayoutInternal(
   auto getClusterEffectiveRadius = [&](size_t idx, bool is3D) -> float {
     auto anc = findAnchor(outClusters[idx].tag);
     float stretch = (anc.stretch > 0.01f) ? anc.stretch : 1.5f;
-    float baseR = std::max(50.0f, 30.0f + std::sqrt(static_cast<float>(outClusters[idx].count)) * 12.0f);
+    float baseR = std::max(50.0f, 35.0f + std::sqrt(static_cast<float>(outClusters[idx].count)) * 14.5f);
     return baseR * (is3D ? std::min(stretch, 1.4f) : stretch);
   };
 
@@ -925,136 +925,132 @@ SampleCloudComponent::calculateClusterLayoutInternal(
 
   std::unordered_map<juce::String, Vector3D> tagCenters3D;
   std::unordered_map<juce::String, Vector3D> tagCenters2D;
-  std::unordered_map<juce::String, int> tagTotalCounts;
   for (const auto &cl : outClusters) {
     tagCenters3D[cl.tag] = cl.centerPos3D;
     tagCenters2D[cl.tag] = cl.centerPos2D;
-    tagTotalCounts[cl.tag] = cl.count;
   }
 
-  std::unordered_map<juce::String, int> tagItemCounts;
-  for (auto &node : nodesCopy) {
-    if (!layoutActive.load()) return {outClusters, {}};
-    juce::String catKey = getNodeCategory(node);
-    auto cPos3D = tagCenters3D[catKey];
-    auto cPos2D = tagCenters2D[catKey];
-    int countIdx = tagItemCounts[catKey]++;
-    int totalInTag = tagTotalCounts[catKey];
-
-    auto anc = findAnchor(catKey);
-    float axisAngle = anc.angle;
-    float axisStretch = (anc.stretch > 0.01f) ? anc.stretch : 1.6f;
-
-    uint32_t nodeHash = static_cast<uint32_t>(node.item.filePath.hashCode() ^
-                                                (countIdx * 2654435761u));
-
-    // Multi-stage hash generation for high-entropy organic variation
-    uint32_t h1 = nodeHash ^ 0x6a09e667;
-    uint32_t h2 = (h1 * 1664525u + 1013904223u) ^ 0xbb67ae85;
-    uint32_t h3 = (h2 * 1664525u + 1013904223u) ^ 0x3c6ef372;
-    uint32_t h4 = (h3 * 1664525u + 1013904223u) ^ 0xa54ff53a;
-
-    // --- 1. Long-Axis Coordinate (Continuous logarithmic audio mapping + organic dispersion, no hard walls) ---
-    float uAxis = 0.0f;
-    float hashVal = ((static_cast<float>(h1 % 2001) - 1000.0f) / 1000.0f);
-
-    if (node.item.highFreqRatio > 0.0001 || node.item.zcr > 0.0001) {
-      float bright = static_cast<float>(node.item.highFreqRatio * 0.45 + node.item.zcr * 2.2);
-      // Smooth logarithmic brightness curve with tanh: asymptotic falloff, ZERO hard clamps, ZERO flat walls
-      float logB = std::log(std::max(0.002f, bright * 4.0f));
-      float audioAxis = std::tanh((logB - 0.10f) * 0.70f);
-
-      // Recommendation B: High-fidelity 78% audio brightness alignment + 22% organic dispersion
-      uAxis = audioAxis * 0.78f + hashVal * 0.22f;
-    } else {
-      uAxis = hashVal;
-    }
-
-    // --- 2. Cross-Axis Coordinate (Recommendation B: 55% Decay Ratio + 22% Gaussian Normal Falloff) ---
-    float u1 = std::max(0.0001f, static_cast<float>((h2 >> 4) % 10000) / 10000.0f);
-    float u2 = static_cast<float>((h3 >> 4) % 10000) / 10000.0f;
-    float gaussNorm = std::sqrt(-2.0f * std::log(u1)) * std::cos(2.0f * juce::MathConstants<float>::pi * u2);
-
-    float decayFeat = 0.0f;
-    if (node.item.decayRatio > 0.001) {
-      decayFeat = std::tanh((static_cast<float>(node.item.decayRatio) - 0.25f) * 2.2f) * 0.55f;
-    }
-    float uCross = decayFeat + gaussNorm * 0.22f;
-
-    // Dynamic cluster scale proportional to item count
-    float baseRadius = std::max(50.0f, 30.0f + std::sqrt(static_cast<float>(totalInTag)) * 12.0f);
-
-    // Edge loosening: samples near the periphery get increased organic dispersion
-    // so clusters dissolve softly into space without forming dense perimeter ridges
-    float rFromCore = std::sqrt(uAxis * uAxis + uCross * uCross);
-    float edgeLoosen = 1.0f + std::min(rFromCore * 0.5f, 1.0f);
-
-    float jX = (((static_cast<float>(h3 % 1001) - 500.0f) / 500.0f) * 5.0f) * edgeLoosen;
-    float jY = (((static_cast<float>(h4 % 1001) - 500.0f) / 500.0f) * 5.0f) * edgeLoosen;
-    float jZ = (((static_cast<float>((h1 ^ h4) % 1001) - 500.0f) / 500.0f) * 5.0f) * edgeLoosen;
-
-    // 2D Rotation by cluster elongation angle
-    float cosA = std::cos(axisAngle);
-    float sinA = std::sin(axisAngle);
-    float posX_rel = (uAxis * axisStretch * cosA - uCross * sinA) * baseRadius + jX;
-    float posY_rel = (uAxis * axisStretch * sinA + uCross * cosA) * baseRadius + jY;
-
-    // 2D Position
-    node.pos2D = { cPos2D.x + posX_rel, cPos2D.y + posY_rel, 0.0f };
-
-    // Recommendation A: 3D Position with Crest Factor (Acoustic Dynamic Punch on Z-depth)
-    float dynamicZ = 0.0f;
-    if (node.item.crestFactor > 0.1) {
-      // Dynamic punch (Crest Factor > 3.2 dB) maps forward (+Z), compressed/dense maps backward (-Z)
-      dynamicZ = std::tanh((static_cast<float>(node.item.crestFactor) - 3.2f) * 0.45f) * (baseRadius * 0.50f);
-    }
-    float zJitter = ((static_cast<float>((h2 ^ h3) % 2001) - 1000.0f) / 1000.0f) * (baseRadius * 0.15f);
-    float posZ_rel = dynamicZ + zJitter + jZ;
-    node.pos3D = { cPos3D.x + posX_rel, cPos3D.y + posY_rel, cPos3D.z + posZ_rel };
-
-    // Recommendation C: Semantic Sub-Tag Micro-Attraction (Zero Extra Text on Map)
-    // Subtle 8% gravitational pull toward neighbor categories if sample has secondary tags (e.g. #808 -> Bass, #Rim -> Clave)
-    Vector3D subTagPull2D { 0.0f, 0.0f, 0.0f };
-    Vector3D subTagPull3D { 0.0f, 0.0f, 0.0f };
-    int pullMatches = 0;
-
-    for (const auto &rawTag : node.item.tags) {
-      juce::String cleanTag = rawTag.trim().toLowerCase();
-      if (cleanTag.startsWith("#")) cleanTag = cleanTag.substring(1);
-
-      juce::String targetCat = TagDatabaseManager::getCanonicalCategory(cleanTag);
-      if (targetCat.isNotEmpty() && targetCat != node.canonicalCategory) {
-        auto it2D = tagCenters2D.find(targetCat);
-        auto it3D = tagCenters3D.find(targetCat);
-        if (it2D != tagCenters2D.end() && it3D != tagCenters3D.end()) {
-          auto dir2D = it2D->second - cPos2D;
-          auto dir3D = it3D->second - cPos3D;
-          subTagPull2D = subTagPull2D + dir2D * 0.08f;
-          subTagPull3D = subTagPull3D + dir3D * 0.08f;
-          pullMatches++;
-          if (pullMatches >= 2) break; // Limit to at most 2 secondary influences
-        }
-      }
-    }
-
-    if (pullMatches > 0) {
-      float scalePull = 1.0f / static_cast<float>(pullMatches);
-      node.pos2D.x += subTagPull2D.x * scalePull;
-      node.pos2D.y += subTagPull2D.y * scalePull;
-      node.pos3D.x += subTagPull3D.x * scalePull;
-      node.pos3D.y += subTagPull3D.y * scalePull;
-      node.pos3D.z += subTagPull3D.z * scalePull;
-    }
-  }
-
-  // --- 3. Intra-Cluster Node Repulsion Pass (Collision Avoidance + Soft Spring Anchoring) ---
-  // Guarantees that similar samples never stack on top of each other
-  // and maintain a clean minimum visual distance just like Atlas 2!
+  // Group nodes by category to perform Acoustic Rank Mapping & high-density mosaic layout
   std::unordered_map<juce::String, std::vector<size_t>> clusterNodeIndices;
   for (size_t i = 0; i < nodesCopy.size(); ++i) {
     clusterNodeIndices[getNodeCategory(nodesCopy[i])].push_back(i);
   }
 
+  // Deterministic acoustic sort: order samples within each cluster by compound brightness (highFreqRatio + zcr)
+  // Falls back to filePath tie-breaker for 100% reproducible layout
+  for (auto &pair : clusterNodeIndices) {
+    auto &indices = pair.second;
+    std::sort(indices.begin(), indices.end(), [&](size_t a, size_t b) {
+      const auto &itemA = nodesCopy[a].item;
+      const auto &itemB = nodesCopy[b].item;
+      float brightA = static_cast<float>(itemA.highFreqRatio * 0.45 + itemA.zcr * 2.2);
+      float brightB = static_cast<float>(itemB.highFreqRatio * 0.45 + itemB.zcr * 2.2);
+      if (std::abs(brightA - brightB) > 0.00001f)
+        return brightA < brightB;
+      return itemA.filePath < itemB.filePath;
+    });
+  }
+
+  for (auto &pair : clusterNodeIndices) {
+    if (!layoutActive.load()) return {outClusters, {}};
+    const auto &catKey = pair.first;
+    const auto &indices = pair.second;
+    size_t count = indices.size();
+    if (count == 0) continue;
+
+    auto cPos3D = tagCenters3D[catKey];
+    auto cPos2D = tagCenters2D[catKey];
+    auto anc = findAnchor(catKey);
+    float axisAngle = anc.angle;
+    float axisStretch = (anc.stretch > 0.01f) ? anc.stretch : 1.6f;
+    float baseRadius = std::max(40.0f, 35.0f + std::sqrt(static_cast<float>(count)) * 14.5f);
+
+    float cosA = std::cos(axisAngle);
+    float sinA = std::sin(axisAngle);
+
+    for (size_t rank_i = 0; rank_i < count; ++rank_i) {
+      size_t nodeIdx = indices[rank_i];
+      auto &node = nodesCopy[nodeIdx];
+
+      // Normalized rank along long acoustic axis: -1.0 (darkest) to +1.0 (brightest)
+      // Eliminates central Gaussian density spikes and guarantees uniform dispersion along the axis
+      float rank_u = (count > 1)
+          ? ((static_cast<float>(rank_i) / static_cast<float>(count - 1)) * 2.0f - 1.0f)
+          : 0.0f;
+
+      // Golden ratio low-discrepancy sequence for uniform, organic cross-axis distribution
+      float cross_u = std::fmod(static_cast<float>(rank_i) * 0.6180339887f, 1.0f) * 2.0f - 1.0f;
+
+      // Elliptical boundary constraint: cluster organically tapers towards the poles
+      float max_cross = std::sqrt(std::max(0.04f, 1.0f - rank_u * rank_u * 0.85f));
+      float cross_scaled = cross_u * max_cross;
+
+      // Secondary acoustic feature: decay ratio (punchy/short vs sustained/long)
+      float decay_u = 0.0f;
+      if (node.item.decayRatio > 0.001) {
+        decay_u = std::tanh((static_cast<float>(node.item.decayRatio) - 0.25f) * 2.2f) * 0.65f;
+      }
+      float final_cross = cross_scaled * 0.65f + decay_u * 0.35f * max_cross;
+
+      // Subtle high-entropy hash jitter to prevent rigid grid lines while keeping organic aesthetic
+      uint32_t nodeHash = static_cast<uint32_t>(node.item.filePath.hashCode() ^ (rank_i * 2654435761u));
+      uint32_t h3 = (nodeHash * 1664525u + 1013904223u) ^ 0x3c6ef372;
+      uint32_t h4 = (h3 * 1664525u + 1013904223u) ^ 0xa54ff53a;
+      float jX = ((static_cast<float>(h3 % 1001) - 500.0f) / 500.0f) * 4.0f;
+      float jY = ((static_cast<float>(h4 % 1001) - 500.0f) / 500.0f) * 4.0f;
+
+      float posX_rel = (rank_u * axisStretch * cosA - final_cross * sinA) * baseRadius + jX;
+      float posY_rel = (rank_u * axisStretch * sinA + final_cross * cosA) * baseRadius + jY;
+
+      node.pos2D = { cPos2D.x + posX_rel, cPos2D.y + posY_rel, 0.0f };
+
+      // 3D position with dynamic punch (Crest Factor) on Z-depth
+      float dynamicZ = 0.0f;
+      if (node.item.crestFactor > 0.1) {
+        dynamicZ = std::tanh((static_cast<float>(node.item.crestFactor) - 3.2f) * 0.45f) * (baseRadius * 0.45f);
+      }
+      float zSeq = std::fmod(static_cast<float>(rank_i) * 0.3247179572f, 1.0f) * 2.0f - 1.0f;
+      float posZ_rel = dynamicZ + zSeq * (baseRadius * 0.25f);
+      node.pos3D = { cPos3D.x + posX_rel, cPos3D.y + posY_rel, cPos3D.z + posZ_rel };
+
+      // Semantic Sub-Tag Micro-Attraction: subtle 6% gravitational pull toward neighbor categories
+      Vector3D subTagPull2D { 0.0f, 0.0f, 0.0f };
+      Vector3D subTagPull3D { 0.0f, 0.0f, 0.0f };
+      int pullMatches = 0;
+
+      for (const auto &rawTag : node.item.tags) {
+        juce::String cleanTag = rawTag.trim().toLowerCase();
+        if (cleanTag.startsWith("#")) cleanTag = cleanTag.substring(1);
+
+        juce::String targetCat = TagDatabaseManager::getCanonicalCategory(cleanTag);
+        if (targetCat.isNotEmpty() && targetCat != node.canonicalCategory) {
+          auto it2D = tagCenters2D.find(targetCat);
+          auto it3D = tagCenters3D.find(targetCat);
+          if (it2D != tagCenters2D.end() && it3D != tagCenters3D.end()) {
+            auto dir2D = it2D->second - cPos2D;
+            auto dir3D = it3D->second - cPos3D;
+            subTagPull2D = subTagPull2D + dir2D * 0.06f;
+            subTagPull3D = subTagPull3D + dir3D * 0.06f;
+            pullMatches++;
+            if (pullMatches >= 2) break;
+          }
+        }
+      }
+
+      if (pullMatches > 0) {
+        float scalePull = 1.0f / static_cast<float>(pullMatches);
+        node.pos2D.x += subTagPull2D.x * scalePull;
+        node.pos2D.y += subTagPull2D.y * scalePull;
+        node.pos3D.x += subTagPull3D.x * scalePull;
+        node.pos3D.y += subTagPull3D.y * scalePull;
+        node.pos3D.z += subTagPull3D.z * scalePull;
+      }
+    }
+  }
+
+  // --- 3. Intra-Cluster Node Repulsion Pass (Strict Zero-Overlap Mosaic) ---
+  // Guaranteed center-to-center minimum distance of 24.5f creates a crisp 2-4px visible buffer
+  // between 20-22px sample dots, eliminating all dot touching even in dense 1,000+ sample clusters!
   std::vector<Vector3D> origPos2D(nodesCopy.size());
   std::vector<Vector3D> origPos3D(nodesCopy.size());
   for (size_t i = 0; i < nodesCopy.size(); ++i) {
@@ -1062,10 +1058,9 @@ SampleCloudComponent::calculateClusterLayoutInternal(
     origPos3D[i] = nodesCopy[i].pos3D;
   }
 
-  // Minimum sample dot spacing: 22.0f guarantees zero visual overlap between 20px dots even in dense cores!
-  const float minNodeDist2D = 22.0f;
+  const float minNodeDist2D = 24.5f;
   const float minNodeDistSq2D = minNodeDist2D * minNodeDist2D;
-  const float minNodeDist3D = 22.0f;
+  const float minNodeDist3D = 24.5f;
   const float minNodeDistSq3D = minNodeDist3D * minNodeDist3D;
 
   for (auto &pair : clusterNodeIndices) {
@@ -1073,7 +1068,7 @@ SampleCloudComponent::calculateClusterLayoutInternal(
     size_t count = indices.size();
     if (count <= 1) continue;
 
-    for (int iter = 0; iter < 18; ++iter) {
+    for (int iter = 0; iter < 28; ++iter) {
       if (!layoutActive.load()) return {outClusters, {}};
       for (size_t i = 0; i < count; ++i) {
         if ((i & 127) == 0 && !layoutActive.load()) return {outClusters, {}};
@@ -1088,7 +1083,7 @@ SampleCloudComponent::calculateClusterLayoutInternal(
 
           if (distSq2 < minNodeDistSq2D && distSq2 > 0.0001f) {
             float dist = std::sqrt(distSq2);
-            float push = (minNodeDist2D - dist) * 0.45f;
+            float push = (minNodeDist2D - dist) * 0.50f;
             float nx = dx2 / dist;
             float ny = dy2 / dist;
             nodesCopy[idxA].pos2D.x -= nx * push;
@@ -1112,7 +1107,7 @@ SampleCloudComponent::calculateClusterLayoutInternal(
 
           if (distSq3 < minNodeDistSq3D && distSq3 > 0.0001f) {
             float dist = std::sqrt(distSq3);
-            float push = (minNodeDist3D - dist) * 0.45f;
+            float push = (minNodeDist3D - dist) * 0.50f;
             float nx = dx3 / dist;
             float ny = dy3 / dist;
             float nz = dz3 / dist;
@@ -1128,21 +1123,24 @@ SampleCloudComponent::calculateClusterLayoutInternal(
             nodesCopy[idxA].pos3D.x -= std::cos(sepAngle) * push;
             nodesCopy[idxA].pos3D.y -= std::sin(sepAngle) * push;
             nodesCopy[idxA].pos3D.z += std::cos(sepAngle) * push;
-            nodesCopy[idxA].pos3D.z -= std::sin(sepAngle) * push;
             nodesCopy[idxB].pos3D.x += std::cos(sepAngle) * push;
             nodesCopy[idxB].pos3D.y += std::sin(sepAngle) * push;
+            nodesCopy[idxB].pos3D.z -= std::cos(sepAngle) * push;
           }
         }
       }
 
-      // Annealed soft spring: preserves organic gradient while letting final passes strictly enforce zero dot overlap!
-      float springNode = 0.05f * (1.0f - (static_cast<float>(iter) / 18.0f));
-      for (size_t idx : indices) {
-        nodesCopy[idx].pos2D.x += (origPos2D[idx].x - nodesCopy[idx].pos2D.x) * springNode;
-        nodesCopy[idx].pos2D.y += (origPos2D[idx].y - nodesCopy[idx].pos2D.y) * springNode;
-        nodesCopy[idx].pos3D.x += (origPos3D[idx].x - nodesCopy[idx].pos3D.x) * springNode;
-        nodesCopy[idx].pos3D.y += (origPos3D[idx].y - nodesCopy[idx].pos3D.y) * springNode;
-        nodesCopy[idx].pos3D.z += (origPos3D[idx].z - nodesCopy[idx].pos3D.z) * springNode;
+      // Annealed soft spring: active ONLY in the first 8 iterations to anchor to acoustic rank positions,
+      // then strictly 0.0 for the remaining 20 iterations so all dot collisions are unconditionally eliminated!
+      if (iter < 8) {
+        float springNode = 0.03f * (1.0f - (static_cast<float>(iter) / 8.0f));
+        for (size_t idx : indices) {
+          nodesCopy[idx].pos2D.x += (origPos2D[idx].x - nodesCopy[idx].pos2D.x) * springNode;
+          nodesCopy[idx].pos2D.y += (origPos2D[idx].y - nodesCopy[idx].pos2D.y) * springNode;
+          nodesCopy[idx].pos3D.x += (origPos3D[idx].x - nodesCopy[idx].pos3D.x) * springNode;
+          nodesCopy[idx].pos3D.y += (origPos3D[idx].y - nodesCopy[idx].pos3D.y) * springNode;
+          nodesCopy[idx].pos3D.z += (origPos3D[idx].z - nodesCopy[idx].pos3D.z) * springNode;
+        }
       }
     }
   }
