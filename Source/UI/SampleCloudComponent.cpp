@@ -271,7 +271,7 @@ bool SampleCloudComponent::loadLayoutFromCache(uint64_t hash, const std::vector<
         return false;
       int magic = checkFis.readInt();
       int version = checkFis.readInt();
-      if (magic != 0x4F57434C || version != 4)
+      if (magic != 0x4F57434C || version != 5)
         isStaleOrCorrupt = true;
     }
     if (isStaleOrCorrupt) {
@@ -405,7 +405,7 @@ void SampleCloudComponent::saveLayoutToCache(
       return;
 
     fos->writeInt(0x4F57434C); // Magic 'OWCL'
-    fos->writeInt(4);          // Version 4 (Center of Mass & Category Unification)
+    fos->writeInt(5);          // Version 5 (Two-Hemisphere Drums vs Melodics Topology)
     fos->writeInt64(static_cast<juce::int64>(hash));
     fos->writeInt(static_cast<int>(calculatedNodes.size()));
     fos->writeInt(static_cast<int>(calculatedClusters.size()));
@@ -456,7 +456,7 @@ void SampleCloudComponent::saveLayoutToCache(
     tf.deleteFile();
   }
 
-  // 2. Scan and purge any cache files with outdated layout versions (< 4)
+  // 2. Scan and purge any cache files with outdated layout versions (< 5)
   juce::Array<juce::File> files;
   cacheDir.findChildFiles(files, juce::File::findFiles, false, "cloud_layout_*.bin");
   for (const auto &f : files) {
@@ -464,7 +464,7 @@ void SampleCloudComponent::saveLayoutToCache(
     bool shouldDelete = false;
     {
       juce::FileInputStream scanFis(f);
-      if (!scanFis.openedOk() || scanFis.readInt() != 0x4F57434C || scanFis.readInt() < 4) {
+      if (!scanFis.openedOk() || scanFis.readInt() != 0x4F57434C || scanFis.readInt() < 5) {
         shouldDelete = true;
       }
     }
@@ -717,40 +717,60 @@ SampleCloudComponent::calculateClusterLayoutInternal(
   };
 
   static const std::unordered_map<juce::String, AtlasAnchorDef> atlasAnchors = {
-    // Left side: Kicks, Bass, Toms, Bongos (Low end & organic punch)
-    { "kick",              { -0.70f, -0.65f, -0.20f, -0.45f, 2.0f } },
-    { "bass",              { -0.85f, -0.52f, -0.25f, -0.60f, 2.1f } },
-    { "tom",               { -0.44f,  0.42f,  0.15f,  2.10f, 2.3f } },
-    { "bongo/conga",       { -0.14f,  0.78f, -0.10f,  0.85f, 1.6f } },
-    { "guitar",            { -0.70f,  0.22f, -0.12f, -0.80f, 1.8f } },
-    { "keys",              { -0.88f,  0.08f,  0.15f,  1.10f, 1.7f } },
-    { "strings",           { -0.38f,  0.18f,  0.22f,  0.40f, 1.6f } },
-    { "brass",             { -0.10f,  0.26f, -0.08f, -0.30f, 1.5f } },
-    { "woodwinds",         { -0.24f,  0.54f,  0.10f,  0.70f, 1.5f } },
-    { "orchestral",        { -0.30f,  0.34f,  0.18f,  0.55f, 1.6f } },
+    // =========================================================================
+    // LEFT HEMISPHERE: RHYTHMIC DRUMS & PERCUSSION (Frequency gradient: Low -> High)
+    // =========================================================================
+    // Low End: Kicks (The cornerstone of electronic rhythm)
+    { "kick",              { -0.72f, -0.68f, -0.20f, -0.45f, 2.0f } },
 
-    // Center & Top: Clave, Shakers, Cowbell, Vocals, Synths, Other (Top transients & Melodic core)
-    { "clave/rim",         {  0.20f,  0.94f,  0.05f,  0.05f, 1.5f } },
-    { "cowbell",           {  0.04f,  0.46f,  0.12f,  0.30f, 1.4f } },
-    { "tambourine shaker", {  0.28f,  0.62f, -0.15f, -0.50f, 1.7f } },
-    { "vocal",             {  0.02f,  0.08f,  0.12f,  0.00f, 1.5f } },
-    { "synth",             { -0.10f, -0.18f,  0.25f,  0.90f, 2.0f } },
-    { "percussion",        {  0.08f,  0.20f, -0.05f,  0.50f, 1.7f } },
-    { "other",             {  0.18f, -0.42f,  0.00f, -0.20f, 1.7f } },
-    { "oneshot",           {  0.22f, -0.40f,  0.00f, -0.20f, 1.7f } },
-    { "loop",              { -0.38f, -0.48f,  0.08f, -0.50f, 1.8f } },
+    // Low-Mid: Toms & Latin/Organic Percussion
+    { "tom",               { -0.80f, -0.25f,  0.10f,  0.40f, 1.8f } },
+    { "bongo/conga",       { -0.55f, -0.15f, -0.05f,  0.60f, 1.6f } },
+    { "percussion",        { -0.42f,  0.05f, -0.05f,  0.50f, 1.7f } },
 
-    // Right side: Snares, Claps, HiHats, Cymbals, Rides, FX (Highs, Snappy transients & Splash)
-    { "hihat closed",      {  0.52f,  0.72f,  0.20f,  0.60f, 1.9f } },
-    { "hihat",             {  0.50f,  0.66f,  0.18f,  0.55f, 1.9f } },
-    { "snare",             {  0.62f,  0.38f,  0.05f,  1.40f, 2.4f } },
-    { "clap",              {  0.75f,  0.08f, -0.18f,  1.50f, 2.2f } },
-    { "snap",              {  0.70f,  0.18f, -0.10f,  1.20f, 1.6f } },
-    { "hihat open",        {  0.68f, -0.26f,  0.12f, -0.40f, 1.7f } },
-    { "ride",              {  1.05f,  0.05f,  0.00f,  1.55f, 2.4f } },
-    { "crash",             {  0.78f, -0.72f, -0.12f,  0.20f, 1.6f } },
-    { "cymbal",            {  0.88f, -0.35f,  0.00f,  0.80f, 1.8f } },
-    { "fx",                {  0.42f, -0.12f, -0.22f, -1.10f, 1.7f } },
+    // Mid-Range: Snappy Transients (Snares, Claps, Rims, Cowbells)
+    { "snare",             { -0.68f,  0.22f,  0.05f,  1.10f, 2.2f } },
+    { "clap",              { -0.45f,  0.28f, -0.12f,  1.20f, 2.0f } },
+    { "snap",              { -0.32f,  0.36f, -0.08f,  1.00f, 1.6f } },
+    { "clave/rim",         { -0.58f,  0.44f,  0.05f,  0.30f, 1.5f } },
+    { "cowbell",           { -0.38f,  0.50f,  0.10f,  0.30f, 1.4f } },
+
+    // Highs & Sizzle: Hi-Hats, Shakers & Metallic Splash
+    { "hihat closed",      { -0.75f,  0.65f,  0.18f,  0.60f, 1.9f } },
+    { "hihat",             { -0.68f,  0.72f,  0.16f,  0.55f, 1.9f } },
+    { "hihat open",        { -0.52f,  0.75f,  0.14f,  0.40f, 1.7f } },
+    { "tambourine shaker", { -0.35f,  0.72f, -0.10f, -0.40f, 1.7f } },
+    { "cymbal",            { -0.72f,  0.90f,  0.05f,  0.70f, 1.8f } },
+    { "ride",              { -0.52f,  0.94f,  0.00f,  1.10f, 2.0f } },
+    { "crash",             { -0.30f,  0.92f, -0.10f,  0.50f, 1.6f } },
+
+    // =========================================================================
+    // RIGHT HEMISPHERE: HARMONIC, MELODIC & TONAL (Frequency gradient: Low -> High)
+    // =========================================================================
+    // Low End: Bass & Sub-Bass (Tonal Foundation)
+    { "bass",              {  0.68f, -0.65f, -0.22f,  0.45f, 2.1f } },
+
+    // Mid-Range: Melodic, Chordal & Acoustic Instruments
+    { "keys",              {  0.52f, -0.15f,  0.12f,  0.80f, 1.8f } },
+    { "guitar",            {  0.75f, -0.05f, -0.10f, -0.60f, 1.8f } },
+    { "strings",           {  0.38f,  0.12f,  0.20f,  0.40f, 1.7f } },
+    { "brass",             {  0.62f,  0.15f, -0.05f, -0.30f, 1.5f } },
+    { "woodwinds",         {  0.45f,  0.32f,  0.10f,  0.60f, 1.5f } },
+    { "orchestral",        {  0.58f,  0.30f,  0.15f,  0.50f, 1.6f } },
+
+    // Mid-High: Synths, Leads, Plucks & Arps
+    { "synth",             {  0.78f,  0.20f,  0.22f,  0.90f, 2.0f } },
+
+    // High FX & Textures
+    { "fx",                {  0.55f,  0.72f, -0.18f, -0.80f, 1.8f } },
+
+    // =========================================================================
+    // CENTER SPINE: VOCALS & TRANSITIONAL ELEMENTS
+    // =========================================================================
+    { "vocal",             {  0.02f,  0.08f,  0.15f,  0.00f, 1.5f } },
+    { "loop",              {  0.00f, -0.32f,  0.05f, -0.30f, 1.8f } },
+    { "other",             {  0.08f, -0.48f,  0.00f, -0.20f, 1.7f } },
+    { "oneshot",           {  0.12f, -0.46f,  0.00f, -0.20f, 1.7f } },
   };
 
   auto findAnchor = [&](const juce::String &rawTag) -> AtlasAnchorDef {
@@ -758,15 +778,16 @@ SampleCloudComponent::calculateClusterLayoutInternal(
     if (t.startsWith("#")) t = t.substring(1);
 
     // Fine-grained sub-tag anchors within their semantic region
-    if (t == "subkick") return { -0.72f, -0.70f, -0.22f, -0.48f, 2.0f };
-    if (t == "subbass") return { -0.88f, -0.58f, -0.28f, -0.62f, 2.1f };
-    if (t == "subdrop" || t == "impact") return {  0.34f, -0.24f, -0.24f, -1.05f, 1.7f };
-    if (t == "riser" || t == "sweep" || t == "downlifter") return {  0.48f, -0.06f, -0.20f, -1.15f, 1.9f };
+    if (t == "subkick") return { -0.75f, -0.75f, -0.22f, -0.48f, 2.0f };
+    if (t == "subbass") return {  0.75f, -0.72f, -0.26f,  0.50f, 2.1f };
+    if (t == "808" || t == "808bass") return {  0.62f, -0.68f, -0.20f,  0.45f, 2.0f };
+    if (t == "subdrop" || t == "impact") return {  0.30f, -0.55f, -0.22f, -0.90f, 1.7f };
+    if (t == "riser" || t == "sweep" || t == "downlifter") return {  0.65f,  0.80f, -0.18f, -1.00f, 1.9f };
     if (t == "atmosphere" || t == "texture" || t == "vinyl" || t == "foley" || t == "glitch")
-      return {  0.40f, -0.18f, -0.18f, -0.95f, 1.7f };
-    if (t == "pad")   return { -0.16f, -0.24f,  0.26f,  0.85f, 1.9f };
-    if (t == "lead")  return { -0.06f, -0.12f,  0.24f,  0.95f, 2.0f };
-    if (t == "pluck" || t == "arp") return { -0.08f, -0.20f,  0.22f,  0.90f, 1.8f };
+      return {  0.45f,  0.60f, -0.15f, -0.80f, 1.7f };
+    if (t == "pad")   return {  0.70f,  0.05f,  0.25f,  0.85f, 1.9f };
+    if (t == "lead")  return {  0.82f,  0.42f,  0.20f,  0.95f, 2.0f };
+    if (t == "pluck" || t == "arp") return {  0.65f,  0.48f,  0.18f,  0.90f, 1.8f };
     if (t == "oneshot" || t == "one_shot") return atlasAnchors.at("oneshot");
 
     // Resolve via Single-Source-of-Truth canonical category (guarantees every instrument/FX/loop tag maps cleanly!)

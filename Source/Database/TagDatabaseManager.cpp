@@ -1059,7 +1059,7 @@ juce::String TagDatabaseManager::getCanonicalCategory(const juce::String& tag)
         t == "808bass" || t == "bass" || t == "bassloop" || t == "808")
         return "bass";
 
-    if (t == "piano" || t == "rhodes" || t == "organ" || t == "keys") return "keys";
+    if (t == "piano" || t == "rhodes" || t == "organ" || t == "keys" || t == "chord" || t == "chords") return "keys";
     if (t == "acousticguitar" || t == "electricguitar" || t == "guitar" || t == "gtr") return "guitar";
 
     if (t == "violin" || t == "viola" || t == "cello" || t == "contrabass" || t == "strings" || t == "string")
@@ -1105,7 +1105,7 @@ juce::String TagDatabaseManager::getCanonicalCategory(const juce::String& tag)
     if (t.contains("conga") || t.contains("bongo")) return "bongo/conga";
     if (t.contains("perc")) return "percussion";
     if (t.contains("bass")) return "bass";
-    if (t.contains("piano") || t.contains("rhodes") || t.contains("organ") || t.contains("keys")) return "keys";
+    if (t.contains("piano") || t.contains("rhodes") || t.contains("organ") || t.contains("keys") || t.contains("chord")) return "keys";
     if (t.contains("guitar") || t.contains("gtr")) return "guitar";
     if (t.contains("string") || t.contains("violin") || t.contains("cello") || t.contains("viola")) return "strings";
     if (t.contains("brass") || t.contains("trumpet") || t.contains("trombone") || t.contains("horn")) return "brass";
@@ -1193,6 +1193,12 @@ void TagDatabaseManager::classifyFromAudioFeatures(MediaItem& item)
 
     if (!isLoop)
     {
+        if (item.filePath.containsIgnoreCase("chord") || item.fileName.containsIgnoreCase("chord"))
+        {
+            item.tags.insert("#Keys");
+            return;
+        }
+
         if (item.durationSeconds <= 1.10 && item.decayRatio < 0.28 &&
             item.highFreqRatio < 0.22 && item.zcr < 0.060 && item.crestFactor > 2.2)
         {
@@ -1301,6 +1307,14 @@ void TagDatabaseManager::sanitizeTags(std::set<juce::String>& tags)
 
     bool hasKeys = (tags.find("#Piano") != tags.end() || tags.find("#Rhodes") != tags.end() ||
                     tags.find("#Organ") != tags.end() || tags.find("#Keys") != tags.end());
+
+    if (hasKeys && hasBass && (tags.find("#SubBass") == tags.end() && tags.find("#808Bass") == tags.end() && tags.find("#ReeseBass") == tags.end()))
+    {
+        // When Keys and generic #Bass collide without a dedicated sub/808/reese bass, Keys takes priority
+        tags.erase("#Bass");
+        tags.erase("#SynthBass");
+        hasBass = false;
+    }
 
     bool hasGuitar = (tags.find("#Guitar") != tags.end() || tags.find("#AcousticGuitar") != tags.end() ||
                       tags.find("#ElectricGuitar") != tags.end());
@@ -1657,6 +1671,7 @@ std::set<juce::String> TagDatabaseManager::inferTagsFromPath(const juce::String&
         { "808bass", "#808Bass", true }, { "808_bass", "#808Bass", true }, { "808-bass", "#808Bass", true }, { "808 bass", "#808Bass", true },
 
         // Melodic & Harmonic Instruments
+        { "chord", "#Keys", true }, { "chords", "#Keys", true },
         { "grandpiano", "#Piano", true }, { "grand_piano", "#Piano", true }, { "piano", "#Piano", true }, { "pianos", "#Piano", true },
         { "rhodes", "#Rhodes", true }, { "epiano", "#Rhodes", true }, { "e_piano", "#Rhodes", true }, { "wurlitzer", "#Rhodes", true },
         { "organ", "#Organ", true }, { "organs", "#Organ", true },
