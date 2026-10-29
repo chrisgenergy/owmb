@@ -25,6 +25,28 @@ __declspec(dllimport) void __stdcall glDrawArrays(unsigned int mode, int first,
 }
 #endif
 
+namespace {
+static void writeBinaryString(juce::OutputStream& stream, const juce::String& str) {
+  auto utf8 = str.toRawUTF8();
+  int len = static_cast<int>(std::strlen(utf8));
+  stream.writeInt(len);
+  if (len > 0)
+    stream.write(utf8, static_cast<size_t>(len));
+}
+
+static juce::String readBinaryString(juce::InputStream& stream) {
+  int len = stream.readInt();
+  if (len <= 0 || len > 65536)
+    return {};
+  juce::HeapBlock<char> buf(len + 1);
+  int bytesRead = stream.read(buf.get(), static_cast<size_t>(len));
+  if (bytesRead != len)
+    return {};
+  buf[len] = '\0';
+  return juce::String::fromUTF8(buf.get(), len);
+}
+} // namespace
+
 namespace openwav {
 
 juce::String SampleCloudComponent::getAtlasCategoryName(const juce::String& tag) {
@@ -114,6 +136,8 @@ SampleCloudComponent::SampleCloudComponent(TagDatabaseManager &db,
   resetZoomButton.onClick = [this] { resetZoomAndPan(); };
 
   viewModeButton.onClick = [this] {
+    if (layoutPending)
+      return;
     is2DMode = !is2DMode;
     if (is2DMode) {
       saved3DRotX = targetRotX;
@@ -225,10 +249,210 @@ void SampleCloudComponent::visibilityChanged() {
 #endif
 }
 
+juce::File SampleCloudComponent::getCacheFile(uint64_t hash) {
+  auto appData = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory);
+  auto cacheDir = appData.getChildFile("OpenWav").getChildFile("CloudCache");
+  if (!cacheDir.exists())
+    cacheDir.createDirectory();
+  return cacheDir.getChildFile("cloud_layout_" + juce::String::toHexString(static_cast<juce::int64>(hash)) + ".bin");
+}
+
+bool SampleCloudComponent::loadLayoutFromCache(uint64_t hash, const std::vector<MediaItem> &items) {
+  auto cacheFile = getCacheFile(hash);
+  if (!cacheFile.existsAsFile())
+    return false;
+
+  juce::FileInputStream fis(cacheFile);
+  if (!fis.openedOk())
+    return false;
+
+  // Header validation
+  if (fis.readInt() != 0x4F57434C) // Magic 'OWCL'
+    return false;
+
+  if (fis.readInt() != 1) // Version 1
+    return false;
+
+  if (static_cast<uint64_t>(fis.readInt64()) != hash)
+    return false;
+
+  int nodeCount = fis.readInt();
+  if (nodeCount != static_cast<int>(items.size()) || nodeCount <= 0)
+    return false;
+
+  int clusterCount = fis.readInt();
+  if (clusterCount < 0 || clusterCount > 2000)
+    return false;
+
+  int edgeCount = fis.readInt();
+  if (edgeCount < 0 || edgeCount > 100000)
+    return false;
+
+  std::vector<CloudNode> loadedNodes;
+  loadedNodes.reserve(static_cast<size_t>(nodeCount));
+
+  for (int i = 0; i < nodeCount; ++i) {
+    if (fis.isExhausted())
+      return false;
+
+    juce::String id = readBinaryString(fis);
+    if (id != items[static_cast<size_t>(i)].id)
+      return false;
+
+    CloudNode node;
+    node.item = items[static_cast<size_t>(i)];
+
+    node.pos2D.x = fis.readFloat();
+    node.pos2D.y = fis.readFloat();
+    node.pos2D.z = fis.readFloat();
+    node.pos3D.x = fis.readFloat();
+    node.pos3D.y = fis.readFloat();
+    node.pos3D.z = fis.readFloat();
+
+    if (!std::isfinite(node.pos2D.x) || !std::isfinite(node.pos2D.y) ||
+        !std::isfinite(node.pos3D.x) || !std::isfinite(node.pos3D.y) ||
+        !std::isfinite(node.pos3D.z))
+      return false;
+
+    node.primaryTag = readBinaryString(fis);
+    node.canonicalCategory = readBinaryString(fis);
+    node.colour = juce::Colour(static_cast<juce::uint32>(fis.readInt()));
+    node.radius = 4.0f;
+    node.hoverScale = 1.0f;
+    node.targetPos = is2DMode ? node.pos2D : node.pos3D;
+    node.currentPos = node.targetPos;
+
+    loadedNodes.push_back(std::move(node));
+  }
+
+  std::vector<TagCluster> loadedClusters;
+  loadedClusters.reserve(static_cast<size_t>(clusterCount));
+
+  for (int c = 0; c < clusterCount; ++c) {
+    if (fis.isExhausted())
+      return false;
+
+    TagCluster cl;
+    cl.tag = readBinaryString(fis);
+    cl.centerPos2D.x = fis.readFloat();
+    cl.centerPos2D.y = fis.readFloat();
+    cl.centerPos2D.z = fis.readFloat();
+    cl.centerPos3D.x = fis.readFloat();
+    cl.centerPos3D.y = fis.readFloat();
+    cl.centerPos3D.z = fis.readFloat();
+
+    if (!std::isfinite(cl.centerPos2D.x) || !std::isfinite(cl.centerPos2D.y) ||
+        !std::isfinite(cl.centerPos3D.x) || !std::isfinite(cl.centerPos3D.y) ||
+        !std::isfinite(cl.centerPos3D.z))
+      return false;
+
+    cl.colour = juce::Colour(static_cast<juce::uint32>(fis.readInt()));
+    cl.count = fis.readInt();
+    cl.centerPos = is2DMode ? cl.centerPos2D : cl.centerPos3D;
+
+    loadedClusters.push_back(std::move(cl));
+  }
+
+  std::vector<std::pair<size_t, size_t>> loadedEdges;
+  loadedEdges.reserve(static_cast<size_t>(edgeCount));
+
+  for (int e = 0; e < edgeCount; ++e) {
+    if (fis.isExhausted())
+      return false;
+
+    int idx1 = fis.readInt();
+    int idx2 = fis.readInt();
+    if (idx1 < 0 || idx1 >= clusterCount || idx2 < 0 || idx2 >= clusterCount)
+      return false;
+
+    loadedEdges.emplace_back(static_cast<size_t>(idx1), static_cast<size_t>(idx2));
+  }
+
+  nodes = std::move(loadedNodes);
+  clusters = std::move(loadedClusters);
+  constellationEdges = std::move(loadedEdges);
+  return true;
+}
+
+void SampleCloudComponent::saveLayoutToCache(
+    uint64_t hash,
+    const std::vector<CloudNode> &calculatedNodes,
+    const std::vector<TagCluster> &calculatedClusters,
+    const std::vector<std::pair<size_t, size_t>> &calculatedEdges) {
+  auto targetFile = getCacheFile(hash);
+  auto tempFile = targetFile.getSiblingFile(targetFile.getFileNameWithoutExtension() + ".tmp");
+
+  if (tempFile.existsAsFile())
+    tempFile.deleteFile();
+
+  {
+    std::unique_ptr<juce::FileOutputStream> fos(tempFile.createOutputStream());
+    if (!fos || !fos->openedOk())
+      return;
+
+    fos->writeInt(0x4F57434C); // Magic 'OWCL'
+    fos->writeInt(1);          // Version
+    fos->writeInt64(static_cast<juce::int64>(hash));
+    fos->writeInt(static_cast<int>(calculatedNodes.size()));
+    fos->writeInt(static_cast<int>(calculatedClusters.size()));
+    fos->writeInt(static_cast<int>(calculatedEdges.size()));
+
+    for (const auto &n : calculatedNodes) {
+      writeBinaryString(*fos, n.item.id);
+      fos->writeFloat(n.pos2D.x);
+      fos->writeFloat(n.pos2D.y);
+      fos->writeFloat(n.pos2D.z);
+      fos->writeFloat(n.pos3D.x);
+      fos->writeFloat(n.pos3D.y);
+      fos->writeFloat(n.pos3D.z);
+      writeBinaryString(*fos, n.primaryTag);
+      writeBinaryString(*fos, n.canonicalCategory);
+      fos->writeInt(static_cast<int>(n.colour.getARGB()));
+    }
+
+    for (const auto &c : calculatedClusters) {
+      writeBinaryString(*fos, c.tag);
+      fos->writeFloat(c.centerPos2D.x);
+      fos->writeFloat(c.centerPos2D.y);
+      fos->writeFloat(c.centerPos2D.z);
+      fos->writeFloat(c.centerPos3D.x);
+      fos->writeFloat(c.centerPos3D.y);
+      fos->writeFloat(c.centerPos3D.z);
+      fos->writeInt(static_cast<int>(c.colour.getARGB()));
+      fos->writeInt(c.count);
+    }
+
+    for (const auto &e : calculatedEdges) {
+      fos->writeInt(static_cast<int>(e.first));
+      fos->writeInt(static_cast<int>(e.second));
+    }
+
+    fos->flush();
+  }
+
+  tempFile.moveFileTo(targetFile);
+
+  // Prune LRU if > 30 cache files exist
+  auto cacheDir = targetFile.getParentDirectory();
+  juce::Array<juce::File> files;
+  cacheDir.findChildFiles(files, juce::File::findFiles, false, "cloud_layout_*.bin");
+  if (files.size() > 30) {
+    std::sort(files.begin(), files.end(), [](const juce::File &a, const juce::File &b) {
+      return a.getLastModificationTime() < b.getLastModificationTime();
+    });
+    for (int i = 0; i < files.size() - 25; ++i) {
+      files[i].deleteFile();
+    }
+  }
+}
+
 void SampleCloudComponent::setItems(const std::vector<MediaItem> &items) {
   uint64_t newHash = items.size();
   for (const auto &item : items) {
     newHash ^= static_cast<uint64_t>(item.id.hashCode());
+    for (const auto &t : item.tags) {
+      newHash ^= static_cast<uint64_t>(t.hashCode());
+    }
     newHash = (newHash << 5) | (newHash >> 59);
   }
   if (newHash == currentDataHash && !nodes.empty())
@@ -253,24 +477,46 @@ void SampleCloudComponent::setItems(const std::vector<MediaItem> &items) {
 #else
     vboNeedsUpdate = true;
 #endif
+    layoutPending = false;
     overlayComponent.repaint();
     repaint();
     return;
   }
 
+  // 1. Try persistent disk cache first (1-2 ms instant load!)
+  if (loadLayoutFromCache(newHash, items)) {
+    layoutPending = false;
+    layoutActive = false;
+    revealAlpha = 0.0f;
+    recentSelectionHistory.clear();
+    rebuildGpuBuffers();
+    if (selectedNodeIndex >= 0 && selectedNodeIndex < static_cast<int>(nodes.size())) {
+      updateSimilarStack();
+    }
+    overlayComponent.repaint();
+    repaint();
+    return;
+  }
+
+  // 2. Cache miss: launch calculation on background worker thread
   layoutPending = true;
   layoutActive = true;
+  pendingItemCount = static_cast<int>(items.size());
   overlayComponent.repaint();
   repaint();
 
-  runLayoutAsync(items);
+  layoutThread = std::thread([this, items = items, newHash]() mutable {
+    runLayoutAsync(std::move(items), newHash);
+  });
 }
 
-void SampleCloudComponent::runLayoutAsync(std::vector<MediaItem> items) {
+void SampleCloudComponent::runLayoutAsync(std::vector<MediaItem> items, uint64_t hash) {
   std::vector<CloudNode> newNodes;
   newNodes.reserve(items.size());
 
   for (const auto &item : items) {
+    if (!layoutActive.load())
+      return;
     CloudNode node;
     node.item = item;
     node.primaryTag = getPrimaryCategoryTag(item.tags);
@@ -286,12 +532,18 @@ void SampleCloudComponent::runLayoutAsync(std::vector<MediaItem> items) {
   if (!layoutActive.load())
     return;
 
+  // Save to persistent cache directly from this worker thread
+  saveLayoutToCache(hash, newNodes, newClusters, newEdges);
+
+  if (!layoutActive.load())
+    return;
+
   juce::Component::SafePointer<SampleCloudComponent> safeThis(this);
-  juce::MessageManager::callAsync([safeThis, newNodes = std::move(newNodes),
+  juce::MessageManager::callAsync([safeThis, hash, newNodes = std::move(newNodes),
                                    newClusters = std::move(newClusters),
                                    newEdges = std::move(newEdges)]() mutable {
     if (auto *comp = safeThis.getComponent()) {
-      if (!comp->layoutActive.load())
+      if (!comp->layoutActive.load() || comp->currentDataHash != hash)
         return;
 
       comp->nodes = std::move(newNodes);
@@ -302,6 +554,7 @@ void SampleCloudComponent::runLayoutAsync(std::vector<MediaItem> items) {
       comp->rebuildGpuBuffers();
 
       comp->layoutPending = false;
+      comp->layoutActive = false;
       comp->revealAlpha = 0.0f;
       if (comp->selectedNodeIndex >= 0 && comp->selectedNodeIndex < static_cast<int>(comp->nodes.size())) {
         comp->updateSimilarStack();
@@ -662,6 +915,7 @@ SampleCloudComponent::calculateClusterLayoutInternal(
     for (int iter = 0; iter < 12; ++iter) {
       if (!layoutActive.load()) return {outClusters, {}};
       for (size_t i = 0; i < count; ++i) {
+        if ((i & 127) == 0 && !layoutActive.load()) return {outClusters, {}};
         size_t idxA = indices[i];
         for (size_t j = i + 1; j < count; ++j) {
           size_t idxB = indices[j];
@@ -733,6 +987,7 @@ SampleCloudComponent::calculateClusterLayoutInternal(
   }
 
   for (auto &node : nodesCopy) {
+    if (!layoutActive.load()) return {outClusters, {}};
     node.targetPos = is2DMode ? node.pos2D : node.pos3D;
     node.currentPos = node.targetPos;
   }
@@ -1258,10 +1513,91 @@ void SampleCloudComponent::paint(juce::Graphics &g) {
 
 void SampleCloudComponent::paintOverlay(juce::Graphics &g) {
   if (layoutPending) {
+    auto bounds = getLocalBounds().toFloat();
+    if (bounds.isEmpty()) return;
+
+    // Dark frosted backdrop covering the entire view area
+    g.setColour(juce::Colour::fromRGB(15, 16, 19).withAlpha(0.82f));
+    g.fillRect(bounds);
+
+    // Center card
+    float cardW = 340.0f;
+    float cardH = 190.0f;
+    auto cardRect = juce::Rectangle<float>(
+        bounds.getCentreX() - cardW * 0.5f,
+        bounds.getCentreY() - cardH * 0.5f,
+        cardW, cardH);
+
+    // Card background & subtle border
+    g.setColour(juce::Colour::fromRGB(24, 26, 32).withAlpha(0.95f));
+    g.fillRoundedRectangle(cardRect, 12.0f);
+    g.setColour(OpenWavLookAndFeel::accentCyan.withAlpha(0.35f));
+    g.drawRoundedRectangle(cardRect, 12.0f, 1.2f);
+
+    // Constellation / Radar Animation Center
+    float animCentreX = cardRect.getCentreX();
+    float animCentreY = cardRect.getY() + 52.0f;
+    float ringRadius = 24.0f;
+
+    // Subtle pulsing outer halo
+    float haloScale = 1.0f + 0.15f * std::sin(pulsePhase);
+    g.setColour(OpenWavLookAndFeel::accentCyan.withAlpha(0.12f + 0.08f * std::sin(pulsePhase)));
+    g.drawEllipse(animCentreX - ringRadius * haloScale, animCentreY - ringRadius * haloScale,
+                  ringRadius * 2.0f * haloScale, ringRadius * 2.0f * haloScale, 1.5f);
+
+    // Subtle background track ring
+    g.setColour(juce::Colour::fromRGB(45, 50, 60));
+    g.drawEllipse(animCentreX - ringRadius, animCentreY - ringRadius, ringRadius * 2.0f, ringRadius * 2.0f, 2.0f);
+
+    // Spinning neon arc
+    juce::Path arcPath;
+    float arcStart = reticleAngle * 2.2f;
+    arcPath.addCentredArc(animCentreX, animCentreY, ringRadius, ringRadius, 0.0f, arcStart, arcStart + 4.2f, true);
+    g.setColour(OpenWavLookAndFeel::accentCyan);
+    g.strokePath(arcPath, juce::PathStrokeType(2.8f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+
+    // 4 Orbiting constellation nodes with atlas tag colors
+    const juce::Colour nodeColours[] = {
+        juce::Colour(0xffff1493), // Kick Pink
+        juce::Colour(0xff00d4ff), // Snare Blue
+        juce::Colour(0xffffe600), // HiHat Yellow
+        juce::Colour(0xff39ff14)  // Percussion Green
+    };
+    for (int k = 0; k < 4; ++k) {
+      float orbitAngle = reticleAngle * 1.5f + k * (juce::MathConstants<float>::halfPi);
+      float nodeR = ringRadius + 9.0f * std::sin(pulsePhase + k * 1.2f);
+      float nx = animCentreX + std::cos(orbitAngle) * nodeR;
+      float ny = animCentreY + std::sin(orbitAngle) * nodeR;
+
+      g.setColour(nodeColours[k].withAlpha(0.85f));
+      g.fillEllipse(nx - 3.0f, ny - 3.0f, 6.0f, 6.0f);
+      g.setColour(nodeColours[k].withAlpha(0.35f));
+      g.drawEllipse(nx - 5.0f, ny - 5.0f, 10.0f, 10.0f, 1.0f);
+    }
+
+    // Text: Title
     g.setColour(juce::Colours::white);
-    g.setFont(18.0f);
-    g.drawText("Layout Computing...", getLocalBounds(),
+    g.setFont(juce::Font(16.0f, juce::Font::bold));
+    g.drawText("Arranging Audio Universe...",
+               cardRect.getX(), animCentreY + 36.0f, cardW, 22.0f,
                juce::Justification::centred);
+
+    // Text: Subtitle
+    g.setColour(juce::Colours::white.withAlpha(0.70f));
+    g.setFont(juce::Font(12.0f, juce::Font::plain));
+    juce::String subText = pendingItemCount > 0
+        ? "Organizing " + juce::String(pendingItemCount) + " samples by timbre & harmonic profile"
+        : "Computing multi-dimensional sound coordinates...";
+    g.drawText(subText, cardRect.getX() + 10.0f, animCentreY + 60.0f, cardW - 20.0f, 18.0f,
+               juce::Justification::centred);
+
+    // Text: Background computation status
+    g.setColour(OpenWavLookAndFeel::accentCyan.withAlpha(0.75f));
+    g.setFont(juce::Font(10.5f, juce::Font::italic));
+    g.drawText("Physics simulation running in background (one-time calculation)",
+               cardRect.getX() + 10.0f, animCentreY + 80.0f, cardW - 20.0f, 16.0f,
+               juce::Justification::centred);
+
     return;
   }
 
@@ -1962,6 +2298,10 @@ void SampleCloudComponent::paintOverlay(juce::Graphics &g) {
 void SampleCloudComponent::timerCallback() {
   bool needsRepaint = false;
 
+  if (layoutPending) {
+    needsRepaint = true;
+  }
+
   if (revealAlpha < 1.0f && !layoutPending) {
     revealAlpha = std::min(1.0f, revealAlpha + 0.03f);
     needsRepaint = true;
@@ -2093,8 +2433,8 @@ void SampleCloudComponent::timerCallback() {
     metalView->renderNow();
   }
 
-  // Repaint overlay for reticle, radar pulse, hover animation, or reveal animation
-  if (hoveredNodeIndex >= 0 || animatedHoverNodeIndex >= 0 || selectedNodeIndex >= 0 || revealAlpha < 1.0f) {
+  // Repaint overlay for reticle, radar pulse, hover animation, reveal animation, or layoutPending
+  if (layoutPending || hoveredNodeIndex >= 0 || animatedHoverNodeIndex >= 0 || selectedNodeIndex >= 0 || revealAlpha < 1.0f) {
     overlayComponent.repaint();
   }
 #else
@@ -2217,6 +2557,8 @@ void SampleCloudComponent::resized() {
 }
 
 void SampleCloudComponent::mouseDown(const juce::MouseEvent &e) {
+  if (layoutPending)
+    return;
   mouseDragStartPos = e.position;
   isPanning = false;
   isRotating = false;
@@ -2447,6 +2789,8 @@ void SampleCloudComponent::mouseDown(const juce::MouseEvent &e) {
 }
 
 void SampleCloudComponent::mouseDrag(const juce::MouseEvent &e) {
+  if (layoutPending)
+    return;
   // If dragging a sample from the floating dock: initiate external drag-and-drop to DAW!
   if (isDraggingDockSample && !dockDragFilePath.isEmpty()) {
     if ((e.position - dockDragStartPos).getDistanceFromOrigin() > 3.0f) {
@@ -2526,6 +2870,8 @@ void SampleCloudComponent::mouseDrag(const juce::MouseEvent &e) {
 }
 
 void SampleCloudComponent::mouseUp(const juce::MouseEvent &e) {
+  if (layoutPending)
+    return;
   isClickConsumedByUI = false;
   if (isDraggingDockSample) {
     isDraggingDockSample = false;
@@ -2554,6 +2900,8 @@ void SampleCloudComponent::mouseUp(const juce::MouseEvent &e) {
 }
 
 void SampleCloudComponent::mouseMove(const juce::MouseEvent &e) {
+  if (layoutPending)
+    return;
   // Check hover over dock components
   bool onDock = false;
   hoveredSimilarIndex = -100;
@@ -2668,6 +3016,8 @@ void SampleCloudComponent::mouseMove(const juce::MouseEvent &e) {
 }
 
 int SampleCloudComponent::findHitNodeAt(juce::Point<float> pos) const {
+  if (layoutPending)
+    return -1;
   const float effW = getEffectiveWidth();
   const float effH = getEffectiveHeight();
   const float halfW = effW * 0.5f;
@@ -2797,6 +3147,8 @@ void SampleCloudComponent::mouseExit(const juce::MouseEvent &e) {
 
 void SampleCloudComponent::mouseWheelMove(
     const juce::MouseEvent &e, const juce::MouseWheelDetails &wheel) {
+  if (layoutPending)
+    return;
   float effW = getEffectiveWidth();
   float effH = getEffectiveHeight();
 
@@ -2867,6 +3219,8 @@ void SampleCloudComponent::mouseWheelMove(
 }
 
 void SampleCloudComponent::mouseDoubleClick(const juce::MouseEvent &e) {
+  if (layoutPending)
+    return;
   if (e.mods.isRightButtonDown() || e.mods.isPopupMenu())
     return;
 

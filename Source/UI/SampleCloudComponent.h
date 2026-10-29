@@ -138,7 +138,13 @@ private:
     static juce::String getAtlasCategoryName(const juce::String& tag);
     static juce::String getCanonicalAtlasCategory(const MediaItem& item);
 
-    void runLayoutAsync(std::vector<MediaItem> items);
+    void runLayoutAsync(std::vector<MediaItem> items, uint64_t hash);
+    bool loadLayoutFromCache(uint64_t hash, const std::vector<MediaItem>& items);
+    void saveLayoutToCache(uint64_t hash,
+                           const std::vector<CloudNode>& calculatedNodes,
+                           const std::vector<TagCluster>& calculatedClusters,
+                           const std::vector<std::pair<size_t, size_t>>& calculatedEdges);
+    static juce::File getCacheFile(uint64_t hash);
     std::pair<std::vector<TagCluster>, std::vector<std::pair<size_t, size_t>>> calculateClusterLayoutInternal(std::vector<CloudNode>& nodesCopy);
     void rebuildGpuBuffers();
     void showContextMenuForNode(int nodeIndex);
@@ -194,7 +200,8 @@ private:
 
     std::thread layoutThread;
     std::atomic<bool> layoutActive { false };
-    bool layoutPending { false };
+    std::atomic<bool> layoutPending { false };
+    int pendingItemCount { 0 };
     float pulsePhase { 0.0f };
     float legendScrollOffset { 0.0f };
 
