@@ -1093,7 +1093,7 @@ juce::String TagDatabaseManager::getCanonicalCategory(const juce::String& tag)
         t == "fx" || t == "sfx")
         return "fx";
 
-    if (t == "drumloop" || t == "loop" || t == "909") return "loop";
+    if (t == "drumloop" || t == "loop" || t == "909" || t == "beat" || t == "beats" || t == "drumkit" || t == "kit" || t == "kits" || t == "breakbeat" || t == "groove") return "loop";
     if (t == "oneshot" || t == "one_shot") return "other";
 
     // Substring fallback for custom user tags (e.g. "my_kick", "warm pad")
@@ -1112,6 +1112,7 @@ juce::String TagDatabaseManager::getCanonicalCategory(const juce::String& tag)
     if (t.contains("cowbell")) return "cowbell";
     if (t.contains("conga") || t.contains("bongo")) return "bongo/conga";
     if (t.contains("perc")) return "percussion";
+    if (t.contains("drum") || t.contains("kit") || t.contains("beat")) return "loop";
     if (t.contains("bass")) return "bass";
     if (t.contains("piano") || t.contains("rhodes") || t.contains("organ") || t.contains("keys") || t.contains("chord")) return "keys";
     if (t.contains("guitar") || t.contains("gtr")) return "guitar";
@@ -1260,12 +1261,27 @@ void TagDatabaseManager::classifyFromAudioFeatures(MediaItem& item)
     }
     else
     {
+        bool hasKey = false;
+        for (const auto& t : item.tags)
+        {
+            if (t.startsWithIgnoreCase("#Key_"))
+            {
+                hasKey = true;
+                break;
+            }
+        }
+
         if (item.highFreqRatio < 0.14 && item.zcr < 0.045)
         {
             item.tags.insert("#BassLoop");
             item.tags.insert("#Bass");
         }
-        else if (item.crestFactor > 3.4 && item.highFreqRatio > 0.30)
+        else if (!hasKey && (item.crestFactor >= 2.1 || item.highFreqRatio >= 0.22))
+        {
+            // Percussive rhythm loop / drum beat: has transient dynamics without a musical key
+            item.tags.insert("#DrumLoop");
+        }
+        else if (item.crestFactor > 3.0 && item.highFreqRatio > 0.20)
         {
             item.tags.insert("#DrumLoop");
         }
@@ -1796,10 +1812,21 @@ std::set<juce::String> TagDatabaseManager::inferTagsFromPath(const juce::String&
         { "funk", "#Funk", false },
         { "soul", "#Soul", false },
 
-        // Typed Loops (Count as semantic categories so folder traversal won't overwrite e.g. Drum_Loop_128.wav)
+        // Typed Loops & Drum Kits / Grooves (Count as semantic categories so folder traversal won't overwrite)
         { "drumloop", "#DrumLoop", true }, { "drumloops", "#DrumLoop", true },
         { "drum_loop", "#DrumLoop", true }, { "drum_loops", "#DrumLoop", true },
         { "drum-loop", "#DrumLoop", true }, { "drum-loops", "#DrumLoop", true },
+        { "drumkit", "#DrumLoop", true }, { "drumkits", "#DrumLoop", true },
+        { "drum_kit", "#DrumLoop", true }, { "drum_kits", "#DrumLoop", true },
+        { "drum-kit", "#DrumLoop", true }, { "drum-kits", "#DrumLoop", true },
+        { "drum kit", "#DrumLoop", true }, { "drum kits", "#DrumLoop", true },
+        { "kit", "#DrumLoop", true }, { "kits", "#DrumLoop", true },
+        { "drums", "#DrumLoop", true }, { "drum", "#DrumLoop", true },
+        { "beat", "#DrumLoop", true }, { "beats", "#DrumLoop", true },
+        { "breakbeat", "#DrumLoop", true }, { "breakbeats", "#DrumLoop", true },
+        { "break_beat", "#DrumLoop", true }, { "break-beat", "#DrumLoop", true },
+        { "break", "#DrumLoop", true }, { "breaks", "#DrumLoop", true },
+        { "groove", "#DrumLoop", true }, { "grooves", "#DrumLoop", true },
         { "toploop", "#TopLoop", true }, { "toploops", "#TopLoop", true },
         { "top_loop", "#TopLoop", true }, { "top_loops", "#TopLoop", true },
         { "top-loop", "#TopLoop", true }, { "top-loops", "#TopLoop", true },
@@ -1817,9 +1844,6 @@ std::set<juce::String> TagDatabaseManager::inferTagsFromPath(const juce::String&
         { "stem", "#Stem", false }, { "stems", "#Stem", false },
         { "dry", "#Dry", false }, { "wet", "#Wet", false },
         { "loop", "#Loop", false }, { "loops", "#Loop", false },
-        { "groove", "#Loop", false }, { "grooves", "#Loop", false },
-        { "break", "#Loop", false }, { "breaks", "#Loop", false },
-        { "beat", "#Loop", false }, { "beats", "#Loop", false },
         { "oneshot", "#OneShot", false }, { "oneshots", "#OneShot", false },
         { "one_shot", "#OneShot", false }, { "one_shots", "#OneShot", false },
         { "one-shot", "#OneShot", false }, { "one-shots", "#OneShot", false },
@@ -1867,6 +1891,17 @@ std::set<juce::String> TagDatabaseManager::inferTagsFromPath(const juce::String&
     if (!fnHasKick && tags.find("#SubDrop") == tags.end() && hasStandaloneSubKeyword(fileNameLower))
     {
         tags.insert("#SubBass");
+        hasFilenameCategory = true;
+    }
+
+    // Ableton Drum Rack presets (.adg.ogg) and Kit previews
+    if ((fileNameLower.contains(".adg") || fileNameLower.contains("kit")) &&
+        !hasFilenameCategory &&
+        !fileNameLower.contains("synth") && !fileNameLower.contains("lead") &&
+        !fileNameLower.contains("keys") && !fileNameLower.contains("piano") &&
+        !fileNameLower.contains("bass") && !fileNameLower.contains("vocal"))
+    {
+        tags.insert("#DrumLoop");
         hasFilenameCategory = true;
     }
 

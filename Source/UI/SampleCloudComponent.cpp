@@ -271,7 +271,7 @@ bool SampleCloudComponent::loadLayoutFromCache(uint64_t hash, const std::vector<
         return false;
       int magic = checkFis.readInt();
       int version = checkFis.readInt();
-      if (magic != 0x4F57434C || version != 9)
+      if (magic != 0x4F57434C || version != 10)
         isStaleOrCorrupt = true;
     }
     if (isStaleOrCorrupt) {
@@ -405,7 +405,7 @@ void SampleCloudComponent::saveLayoutToCache(
       return;
 
     fos->writeInt(0x4F57434C); // Magic 'OWCL'
-    fos->writeInt(9);          // Version 9 (Strict Technical Tag Shield & Musical Loop Guard)
+    fos->writeInt(10);         // Version 10 (Drum Kits & Beats Left Hemisphere Anchoring)
     fos->writeInt64(static_cast<juce::int64>(hash));
     fos->writeInt(static_cast<int>(calculatedNodes.size()));
     fos->writeInt(static_cast<int>(calculatedClusters.size()));
@@ -464,7 +464,7 @@ void SampleCloudComponent::saveLayoutToCache(
     bool shouldDelete = false;
     {
       juce::FileInputStream scanFis(f);
-      if (!scanFis.openedOk() || scanFis.readInt() != 0x4F57434C || scanFis.readInt() < 9) {
+      if (!scanFis.openedOk() || scanFis.readInt() != 0x4F57434C || scanFis.readInt() < 10) {
         shouldDelete = true;
       }
     }
@@ -794,6 +794,7 @@ SampleCloudComponent::calculateClusterLayoutInternal(
     if (t == "pad")   return {  0.82f,  0.15f,  0.25f,  0.85f, 1.7f };
     if (t == "lead")  return {  0.92f,  0.48f,  0.20f,  0.95f, 1.8f };
     if (t == "pluck" || t == "arp") return {  0.76f,  0.55f,  0.18f,  0.90f, 1.6f };
+    if (t == "drumloop" || t == "beat" || t == "kit") return { -0.25f, -0.35f, 0.05f, -0.30f, 1.7f };
     if (t == "oneshot" || t == "one_shot") return atlasAnchors.at("oneshot");
 
     // Resolve via Single-Source-of-Truth canonical category (guarantees every instrument/FX/loop tag maps cleanly!)
