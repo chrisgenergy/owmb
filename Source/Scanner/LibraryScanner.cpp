@@ -6,7 +6,16 @@
 #include <cmath>
 #include <cstring>
 
-#if JUCE_MAC
+#if JUCE_WINDOWS
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <winioctl.h>
+#elif JUCE_LINUX
+#include <sys/stat.h>
+#include <sys/sysmacros.h>
+#elif JUCE_MAC
 #include <unistd.h>
 #endif
 
@@ -77,9 +86,93 @@ void LibraryScanner::notifyScanFinished(int totalFilesDiscovered)
     });
 }
 
+bool LibraryScanner::isPathOnRotationalDrive(const juce::String& path)
+{
+#if JUCE_WINDOWS
+    juce::String root = path.upToFirstOccurrenceOf(":", true, false);
+    if (root.isEmpty() || root.length() < 2)
+        return false;
+
+    juce::String rootSlash = root + "\\";
+    UINT driveType = GetDriveTypeW(rootSlash.toWideCharPointer());
+    if (driveType == DRIVE_REMOTE)
+    {
+        // Network drives (NAS / SMB) have network latency comparable to rotational drives;
+        // treat them as rotational/high-latency to avoid overwhelming network buffers
+        return true;
+    }
+    if (driveType != DRIVE_FIXED && driveType != DRIVE_REMOVABLE)
+        return false;
+
+    juce::String volumeDevice = "\\\\.\\" + root;
+    HANDLE hDevice = CreateFileW(volumeDevice.toWideCharPointer(),
+                                 0, // Query access only - no admin rights needed!
+                                 FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                 NULL,
+                                 OPEN_EXISTING,
+                                 0,
+                                 NULL);
+
+    if (hDevice == INVALID_HANDLE_VALUE)
+        return false;
+
+    STORAGE_PROPERTY_QUERY query = {};
+    query.PropertyId = StorageDeviceSeekPenaltyProperty;
+    query.QueryType = PropertyStandardQuery;
+
+    DEVICE_SEEK_PENALTY_DESCRIPTOR seekPenalty = {};
+    DWORD bytesReturned = 0;
+
+    BOOL ok = DeviceIoControl(hDevice,
+                              IOCTL_STORAGE_QUERY_PROPERTY,
+                              &query,
+                              sizeof(query),
+                              &seekPenalty,
+                              sizeof(seekPenalty),
+                              &bytesReturned,
+                              NULL);
+
+    CloseHandle(hDevice);
+
+    if (ok && bytesReturned >= sizeof(DEVICE_SEEK_PENALTY_DESCRIPTOR))
+    {
+        return seekPenalty.IncursSeekPenalty != FALSE;
+    }
+
+    return false;
+#elif JUCE_LINUX
+    struct stat st;
+    if (stat(path.toRawUTF8(), &st) != 0)
+        return false;
+    unsigned int majorDev = major(st.st_dev);
+    unsigned int minorDev = minor(st.st_dev);
+    juce::String sysfsPath = juce::String::formatted("/sys/dev/block/%u:%u/queue/rotational", majorDev, minorDev);
+    juce::File f(sysfsPath);
+    if (f.existsAsFile())
+    {
+        return f.loadFileAsString().trim() == "1";
+    }
+    return false;
+#else
+    juce::ignoreUnused(path);
+    return false;
+#endif
+}
+
 void LibraryScanner::run()
 {
     notifyScanStarted();
+
+    // Check if any of the target folders reside on a rotational HDD or high-latency network drive
+    bool hasRotationalDrive = false;
+    for (const auto& folderPath : targetFolders)
+    {
+        if (isPathOnRotationalDrive(folderPath))
+        {
+            hasRotationalDrive = true;
+            break;
+        }
+    }
 
     std::vector<juce::File> newFilesToScan;
 
@@ -107,15 +200,10 @@ void LibraryScanner::run()
             auto absPath = file.getFullPathName();
             juce::String id = juce::String::toHexString(absPath.hashCode64());
 
-            MediaItem existingItem;
-            if (db.getItemById(id, existingItem))
+            // High-performance zero-copy check: skips unmodified files without copying MediaItem structs
+            if (db.isItemUnmodified(id, file.getSize(), file.getLastModificationTime().toMilliseconds()))
             {
-                if (existingItem.fileSizeBytes == file.getSize() &&
-                    existingItem.dateAddedMs == file.getLastModificationTime().toMilliseconds())
-                {
-                    // File already scanned and unmodified -> skip!
-                    continue;
-                }
+                continue;
             }
 
             newFilesToScan.push_back(file);
@@ -126,13 +214,34 @@ void LibraryScanner::run()
 
     if (!newFilesToScan.empty() && !threadShouldExit() && !cancelRequested)
     {
-        unsigned int hardwareCores = std::thread::hardware_concurrency();
-        // Dynamically scale worker threads to utilize available hardware CPU cores (up to 16 threads)
-        unsigned int numThreads = std::max(2u, std::min(16u, (hardwareCores > 1) ? (hardwareCores - 1) : 2u));
-        size_t total = newFilesToScan.size();
-        size_t chunkSize = (total + numThreads - 1) / numThreads;
+        // For rotational HDDs, sort files by full directory path so files in adjacent physical
+        // disk clusters are read sequentially, drastically cutting mechanical seek penalties
+        if (hasRotationalDrive)
+        {
+            std::sort(newFilesToScan.begin(), newFilesToScan.end(), [](const juce::File& a, const juce::File& b) {
+                return a.getFullPathName().compareIgnoreCase(b.getFullPathName()) < 0;
+            });
+        }
 
-        notifyScanProgress(0, static_cast<int>(total), "Starting high-speed analysis of new files...");
+        unsigned int hardwareCores = std::thread::hardware_concurrency();
+        unsigned int numThreads = 2u;
+        size_t total = newFilesToScan.size();
+
+        if (hasRotationalDrive)
+        {
+            // On mechanical HDDs or high-latency network storage:
+            // Restrict concurrency to 1-2 worker threads to eliminate head thrashing
+            numThreads = (hardwareCores > 1) ? 2u : 1u;
+            notifyScanProgress(0, static_cast<int>(total), "Starting optimized low-seek analysis of new files (Rotational Drive mode)...");
+        }
+        else
+        {
+            // High-speed solid-state parallel mode (up to 16 threads)
+            numThreads = std::max(2u, std::min(16u, (hardwareCores > 1) ? (hardwareCores - 1) : 2u));
+            notifyScanProgress(0, static_cast<int>(total), "Starting high-speed analysis of new files...");
+        }
+
+        size_t chunkSize = (total + numThreads - 1) / numThreads;
 
         std::vector<std::future<void>> futures;
 

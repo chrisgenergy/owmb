@@ -44,6 +44,7 @@ public:
 
     // Item Operations
     bool getItemById(const juce::String& itemId, MediaItem& item) const;
+    bool isItemUnmodified(const juce::String& itemId, int64_t fileSizeBytes, int64_t dateAddedMs) const;
     void addOrUpdateItem(const MediaItem& item);
     void addItems(const std::vector<MediaItem>& items, bool saveNow = true, bool notifyListeners = true);
     void addTagToItem(const juce::String& itemId, const juce::String& tag);

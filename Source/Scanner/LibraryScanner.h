@@ -36,6 +36,8 @@ public:
     void addListener(ScannerListener* listener);
     void removeListener(ScannerListener* listener);
 
+    static bool isPathOnRotationalDrive(const juce::String& path);
+
 private:
     void run() override;
     MediaItem processAudioFile(const juce::File& file, juce::AudioFormatManager& localFormatManager);
