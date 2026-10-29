@@ -200,10 +200,15 @@ void LibraryScanner::run()
             auto absPath = file.getFullPathName();
             juce::String id = juce::String::toHexString(absPath.hashCode64());
 
-            // High-performance zero-copy check: skips unmodified files without copying MediaItem structs
-            if (db.isItemUnmodified(id, file.getSize(), file.getLastModificationTime().toMilliseconds()))
+            MediaItem existingItem;
+            if (db.getItemById(id, existingItem))
             {
-                continue;
+                if (existingItem.fileSizeBytes == file.getSize() &&
+                    existingItem.dateAddedMs == file.getLastModificationTime().toMilliseconds())
+                {
+                    // File already scanned and unmodified -> skip!
+                    continue;
+                }
             }
 
             newFilesToScan.push_back(file);

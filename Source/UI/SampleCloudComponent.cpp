@@ -659,10 +659,6 @@ SampleCloudComponent::calculateClusterLayoutInternal(
     size_t count = indices.size();
     if (count <= 1) continue;
 
-    // For very large clusters, skip pairwise O(N^2) repulsion to prevent worker freezes;
-    // organic multi-stage hash dispersion + Box-Muller distribution already cleanly separates nodes
-    if (count > 2000) continue;
-
     for (int iter = 0; iter < 12; ++iter) {
       if (!layoutActive.load()) return {outClusters, {}};
       for (size_t i = 0; i < count; ++i) {

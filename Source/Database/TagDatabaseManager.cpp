@@ -189,17 +189,6 @@ bool TagDatabaseManager::getItemById(const juce::String& itemId, MediaItem& item
     return false;
 }
 
-bool TagDatabaseManager::isItemUnmodified(const juce::String& itemId, int64_t fileSizeBytes, int64_t dateAddedMs) const
-{
-    const juce::ScopedLock sl(lock);
-    auto it = itemsMap.find(itemId);
-    if (it != itemsMap.end())
-    {
-        return (it->second.fileSizeBytes == fileSizeBytes && it->second.dateAddedMs == dateAddedMs);
-    }
-    return false;
-}
-
 void TagDatabaseManager::addOrUpdateItem(const MediaItem& item)
 {
     {
