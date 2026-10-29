@@ -271,7 +271,7 @@ bool SampleCloudComponent::loadLayoutFromCache(uint64_t hash, const std::vector<
         return false;
       int magic = checkFis.readInt();
       int version = checkFis.readInt();
-      if (magic != 0x4F57434C || version != 5)
+      if (magic != 0x4F57434C || version != 6)
         isStaleOrCorrupt = true;
     }
     if (isStaleOrCorrupt) {
@@ -405,7 +405,7 @@ void SampleCloudComponent::saveLayoutToCache(
       return;
 
     fos->writeInt(0x4F57434C); // Magic 'OWCL'
-    fos->writeInt(5);          // Version 5 (Two-Hemisphere Drums vs Melodics Topology)
+    fos->writeInt(6);          // Version 6 (Zero-Overlap Dynamic Cluster Spacing for All Categories)
     fos->writeInt64(static_cast<juce::int64>(hash));
     fos->writeInt(static_cast<int>(calculatedNodes.size()));
     fos->writeInt(static_cast<int>(calculatedClusters.size()));
@@ -456,7 +456,7 @@ void SampleCloudComponent::saveLayoutToCache(
     tf.deleteFile();
   }
 
-  // 2. Scan and purge any cache files with outdated layout versions (< 5)
+  // 2. Scan and purge any cache files with outdated layout versions (< 6)
   juce::Array<juce::File> files;
   cacheDir.findChildFiles(files, juce::File::findFiles, false, "cloud_layout_*.bin");
   for (const auto &f : files) {
@@ -464,7 +464,7 @@ void SampleCloudComponent::saveLayoutToCache(
     bool shouldDelete = false;
     {
       juce::FileInputStream scanFis(f);
-      if (!scanFis.openedOk() || scanFis.readInt() != 0x4F57434C || scanFis.readInt() < 5) {
+      if (!scanFis.openedOk() || scanFis.readInt() != 0x4F57434C || scanFis.readInt() < 6) {
         shouldDelete = true;
       }
     }
@@ -721,56 +721,56 @@ SampleCloudComponent::calculateClusterLayoutInternal(
     // LEFT HEMISPHERE: RHYTHMIC DRUMS & PERCUSSION (Frequency gradient: Low -> High)
     // =========================================================================
     // Low End: Kicks (The cornerstone of electronic rhythm)
-    { "kick",              { -0.72f, -0.68f, -0.20f, -0.45f, 2.0f } },
+    { "kick",              { -0.82f, -0.70f, -0.20f, -0.45f, 1.8f } },
 
     // Low-Mid: Toms & Latin/Organic Percussion
-    { "tom",               { -0.80f, -0.25f,  0.10f,  0.40f, 1.8f } },
-    { "bongo/conga",       { -0.55f, -0.15f, -0.05f,  0.60f, 1.6f } },
-    { "percussion",        { -0.42f,  0.05f, -0.05f,  0.50f, 1.7f } },
+    { "tom",               { -0.88f, -0.28f,  0.10f,  0.40f, 1.6f } },
+    { "bongo/conga",       { -0.60f, -0.22f, -0.05f,  0.60f, 1.5f } },
+    { "percussion",        { -0.52f,  0.05f, -0.05f,  0.50f, 1.5f } },
 
     // Mid-Range: Snappy Transients (Snares, Claps, Rims, Cowbells)
-    { "snare",             { -0.68f,  0.22f,  0.05f,  1.10f, 2.2f } },
-    { "clap",              { -0.45f,  0.28f, -0.12f,  1.20f, 2.0f } },
-    { "snap",              { -0.32f,  0.36f, -0.08f,  1.00f, 1.6f } },
-    { "clave/rim",         { -0.58f,  0.44f,  0.05f,  0.30f, 1.5f } },
-    { "cowbell",           { -0.38f,  0.50f,  0.10f,  0.30f, 1.4f } },
+    { "snare",             { -0.75f,  0.22f,  0.05f,  1.10f, 1.8f } },
+    { "clap",              { -0.48f,  0.25f, -0.12f,  1.20f, 1.6f } },
+    { "snap",              { -0.30f,  0.35f, -0.08f,  1.00f, 1.4f } },
+    { "clave/rim",         { -0.58f,  0.48f,  0.05f,  0.30f, 1.5f } },
+    { "cowbell",           { -0.36f,  0.55f,  0.10f,  0.30f, 1.4f } },
 
     // Highs & Sizzle: Hi-Hats, Shakers & Metallic Splash
-    { "hihat closed",      { -0.75f,  0.65f,  0.18f,  0.60f, 1.9f } },
-    { "hihat",             { -0.68f,  0.72f,  0.16f,  0.55f, 1.9f } },
-    { "hihat open",        { -0.52f,  0.75f,  0.14f,  0.40f, 1.7f } },
-    { "tambourine shaker", { -0.35f,  0.72f, -0.10f, -0.40f, 1.7f } },
-    { "cymbal",            { -0.72f,  0.90f,  0.05f,  0.70f, 1.8f } },
-    { "ride",              { -0.52f,  0.94f,  0.00f,  1.10f, 2.0f } },
-    { "crash",             { -0.30f,  0.92f, -0.10f,  0.50f, 1.6f } },
+    { "hihat closed",      { -0.82f,  0.68f,  0.18f,  0.60f, 1.7f } },
+    { "hihat",             { -0.68f,  0.76f,  0.16f,  0.55f, 1.7f } },
+    { "hihat open",        { -0.50f,  0.82f,  0.14f,  0.40f, 1.6f } },
+    { "tambourine shaker", { -0.30f,  0.78f, -0.10f, -0.40f, 1.5f } },
+    { "cymbal",            { -0.78f,  0.94f,  0.05f,  0.70f, 1.6f } },
+    { "ride",              { -0.54f,  0.98f,  0.00f,  1.10f, 1.6f } },
+    { "crash",             { -0.26f,  0.95f, -0.10f,  0.50f, 1.5f } },
 
     // =========================================================================
     // RIGHT HEMISPHERE: HARMONIC, MELODIC & TONAL (Frequency gradient: Low -> High)
     // =========================================================================
     // Low End: Bass & Sub-Bass (Tonal Foundation)
-    { "bass",              {  0.68f, -0.65f, -0.22f,  0.45f, 2.1f } },
+    { "bass",              {  0.82f, -0.70f, -0.22f,  0.45f, 1.8f } },
 
-    // Mid-Range: Melodic, Chordal & Acoustic Instruments
-    { "keys",              {  0.52f, -0.15f,  0.12f,  0.80f, 1.8f } },
-    { "guitar",            {  0.75f, -0.05f, -0.10f, -0.60f, 1.8f } },
-    { "strings",           {  0.38f,  0.12f,  0.20f,  0.40f, 1.7f } },
-    { "brass",             {  0.62f,  0.15f, -0.05f, -0.30f, 1.5f } },
-    { "woodwinds",         {  0.45f,  0.32f,  0.10f,  0.60f, 1.5f } },
-    { "orchestral",        {  0.58f,  0.30f,  0.15f,  0.50f, 1.6f } },
+    // Mid-Range: Melodic, Chordal & Acoustic Instruments (Dedicated Acoustic Sector)
+    { "guitar",            {  0.72f, -0.25f, -0.10f, -0.60f, 1.6f } },
+    { "keys",              {  0.42f, -0.22f,  0.12f,  0.80f, 1.6f } },
+    { "strings",           {  0.28f,  0.28f,  0.20f,  0.40f, 1.5f } },
+    { "orchestral",        {  0.42f,  0.45f,  0.15f,  0.50f, 1.5f } },
+    { "brass",             {  0.62f,  0.38f, -0.05f, -0.30f, 1.5f } },
+    { "woodwinds",         {  0.32f,  0.65f,  0.10f,  0.60f, 1.4f } },
 
-    // Mid-High: Synths, Leads, Plucks & Arps
-    { "synth",             {  0.78f,  0.20f,  0.22f,  0.90f, 2.0f } },
+    // Mid-High: Synths, Leads, Plucks & Arps (Dedicated Outer Electronic Sector)
+    { "synth",             {  0.88f,  0.28f,  0.22f,  0.90f, 1.8f } },
 
     // High FX & Textures
-    { "fx",                {  0.55f,  0.72f, -0.18f, -0.80f, 1.8f } },
+    { "fx",                {  0.65f,  0.80f, -0.18f, -0.80f, 1.6f } },
 
     // =========================================================================
     // CENTER SPINE: VOCALS & TRANSITIONAL ELEMENTS
     // =========================================================================
-    { "vocal",             {  0.02f,  0.08f,  0.15f,  0.00f, 1.5f } },
-    { "loop",              {  0.00f, -0.32f,  0.05f, -0.30f, 1.8f } },
-    { "other",             {  0.08f, -0.48f,  0.00f, -0.20f, 1.7f } },
-    { "oneshot",           {  0.12f, -0.46f,  0.00f, -0.20f, 1.7f } },
+    { "vocal",             {  0.02f,  0.12f,  0.15f,  0.00f, 1.4f } },
+    { "loop",              {  0.00f, -0.48f,  0.05f, -0.30f, 1.7f } },
+    { "other",             {  0.08f, -0.75f,  0.00f, -0.20f, 1.4f } },
+    { "oneshot",           {  0.12f, -0.72f,  0.00f, -0.20f, 1.4f } },
   };
 
   auto findAnchor = [&](const juce::String &rawTag) -> AtlasAnchorDef {
@@ -778,16 +778,16 @@ SampleCloudComponent::calculateClusterLayoutInternal(
     if (t.startsWith("#")) t = t.substring(1);
 
     // Fine-grained sub-tag anchors within their semantic region
-    if (t == "subkick") return { -0.75f, -0.75f, -0.22f, -0.48f, 2.0f };
-    if (t == "subbass") return {  0.75f, -0.72f, -0.26f,  0.50f, 2.1f };
-    if (t == "808" || t == "808bass") return {  0.62f, -0.68f, -0.20f,  0.45f, 2.0f };
-    if (t == "subdrop" || t == "impact") return {  0.30f, -0.55f, -0.22f, -0.90f, 1.7f };
-    if (t == "riser" || t == "sweep" || t == "downlifter") return {  0.65f,  0.80f, -0.18f, -1.00f, 1.9f };
+    if (t == "subkick") return { -0.85f, -0.75f, -0.22f, -0.48f, 1.8f };
+    if (t == "subbass") return {  0.85f, -0.75f, -0.26f,  0.50f, 1.8f };
+    if (t == "808" || t == "808bass") return {  0.78f, -0.72f, -0.20f,  0.45f, 1.8f };
+    if (t == "subdrop" || t == "impact") return {  0.25f, -0.65f, -0.22f, -0.90f, 1.6f };
+    if (t == "riser" || t == "sweep" || t == "downlifter") return {  0.72f,  0.88f, -0.18f, -1.00f, 1.7f };
     if (t == "atmosphere" || t == "texture" || t == "vinyl" || t == "foley" || t == "glitch")
-      return {  0.45f,  0.60f, -0.15f, -0.80f, 1.7f };
-    if (t == "pad")   return {  0.70f,  0.05f,  0.25f,  0.85f, 1.9f };
-    if (t == "lead")  return {  0.82f,  0.42f,  0.20f,  0.95f, 2.0f };
-    if (t == "pluck" || t == "arp") return {  0.65f,  0.48f,  0.18f,  0.90f, 1.8f };
+      return {  0.55f,  0.68f, -0.15f, -0.80f, 1.5f };
+    if (t == "pad")   return {  0.82f,  0.15f,  0.25f,  0.85f, 1.7f };
+    if (t == "lead")  return {  0.92f,  0.48f,  0.20f,  0.95f, 1.8f };
+    if (t == "pluck" || t == "arp") return {  0.76f,  0.55f,  0.18f,  0.90f, 1.6f };
     if (t == "oneshot" || t == "one_shot") return atlasAnchors.at("oneshot");
 
     // Resolve via Single-Source-of-Truth canonical category (guarantees every instrument/FX/loop tag maps cleanly!)
@@ -803,9 +803,16 @@ SampleCloudComponent::calculateClusterLayoutInternal(
     return { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
   };
 
+  auto getClusterEffectiveRadius = [&](size_t idx, bool is3D) -> float {
+    auto anc = findAnchor(outClusters[idx].tag);
+    float stretch = (anc.stretch > 0.01f) ? anc.stretch : 1.5f;
+    float baseR = std::max(45.0f, 25.0f + std::sqrt(static_cast<float>(outClusters[idx].count)) * 8.5f);
+    return baseR * (is3D ? std::min(stretch, 1.4f) : stretch);
+  };
+
   if (tagCount > 0) {
-    float baseSpread2D = std::max(520.0f, std::sqrt(static_cast<float>(nodesCopy.size())) * 16.0f);
-    float baseSpread3D = std::max(480.0f, std::sqrt(static_cast<float>(nodesCopy.size())) * 14.0f);
+    float baseSpread2D = std::max(750.0f, std::sqrt(static_cast<float>(nodesCopy.size())) * 24.0f);
+    float baseSpread3D = std::max(680.0f, std::sqrt(static_cast<float>(nodesCopy.size())) * 20.0f);
 
     for (size_t i = 0; i < tagCount; ++i) {
       auto anc = findAnchor(outClusters[i].tag);
@@ -828,16 +835,16 @@ SampleCloudComponent::calculateClusterLayoutInternal(
       initPos3D[i] = outClusters[i].centerPos3D;
     }
 
-    // 3D Relaxation with gentle semantic restoring spring
-    for (int iter = 0; iter < 16; ++iter) {
+    // 3D Relaxation with stretch-aware collision and annealed restoring spring
+    for (int iter = 0; iter < 48; ++iter) {
       if (!layoutActive.load()) return {outClusters, {}};
       for (size_t i = 0; i < tagCount; ++i) {
         for (size_t j = i + 1; j < tagCount; ++j) {
           auto delta = outClusters[j].centerPos3D - outClusters[i].centerPos3D;
           float dist = std::sqrt(delta.x * delta.x + delta.y * delta.y + delta.z * delta.z);
-          float r1 = std::max(70.0f, 35.0f + std::sqrt(static_cast<float>(outClusters[i].count)) * 20.0f);
-          float r2 = std::max(70.0f, 35.0f + std::sqrt(static_cast<float>(outClusters[j].count)) * 20.0f);
-          float minDist = r1 + r2 + 60.0f;
+          float r1 = getClusterEffectiveRadius(i, true);
+          float r2 = getClusterEffectiveRadius(j, true);
+          float minDist = r1 + r2 + 70.0f;
 
           if (dist < minDist && dist > 0.01f) {
             float overlap = (minDist - dist) * 0.5f;
@@ -847,15 +854,16 @@ SampleCloudComponent::calculateClusterLayoutInternal(
           }
         }
       }
+      float springK3 = 0.04f * (1.0f - (static_cast<float>(iter) / 48.0f));
       for (size_t i = 0; i < tagCount; ++i) {
-        outClusters[i].centerPos3D.x += (initPos3D[i].x - outClusters[i].centerPos3D.x) * 0.08f;
-        outClusters[i].centerPos3D.y += (initPos3D[i].y - outClusters[i].centerPos3D.y) * 0.08f;
-        outClusters[i].centerPos3D.z += (initPos3D[i].z - outClusters[i].centerPos3D.z) * 0.08f;
+        outClusters[i].centerPos3D.x += (initPos3D[i].x - outClusters[i].centerPos3D.x) * springK3;
+        outClusters[i].centerPos3D.y += (initPos3D[i].y - outClusters[i].centerPos3D.y) * springK3;
+        outClusters[i].centerPos3D.z += (initPos3D[i].z - outClusters[i].centerPos3D.z) * springK3;
       }
     }
 
-    // 2D Relaxation (Planar Repulsion with gentle semantic restoring spring)
-    for (int iter = 0; iter < 24; ++iter) {
+    // 2D Relaxation with stretch-aware collision and annealed restoring spring
+    for (int iter = 0; iter < 48; ++iter) {
       if (!layoutActive.load()) return {outClusters, {}};
       for (size_t i = 0; i < tagCount; ++i) {
         for (size_t j = i + 1; j < tagCount; ++j) {
@@ -863,9 +871,9 @@ SampleCloudComponent::calculateClusterLayoutInternal(
           float dy = outClusters[j].centerPos2D.y - outClusters[i].centerPos2D.y;
           float dist = std::sqrt(dx * dx + dy * dy);
 
-          float r1 = std::max(70.0f, 35.0f + std::sqrt(static_cast<float>(outClusters[i].count)) * 20.0f);
-          float r2 = std::max(70.0f, 35.0f + std::sqrt(static_cast<float>(outClusters[j].count)) * 20.0f);
-          float minDist = r1 + r2 + 60.0f;
+          float r1 = getClusterEffectiveRadius(i, false);
+          float r2 = getClusterEffectiveRadius(j, false);
+          float minDist = r1 + r2 + 70.0f;
 
           if (dist < minDist && dist > 0.01f) {
             float overlap = (minDist - dist) * 0.5f;
@@ -878,9 +886,35 @@ SampleCloudComponent::calculateClusterLayoutInternal(
           }
         }
       }
+      float springK2 = 0.04f * (1.0f - (static_cast<float>(iter) / 48.0f));
       for (size_t i = 0; i < tagCount; ++i) {
-        outClusters[i].centerPos2D.x += (initPos2D[i].x - outClusters[i].centerPos2D.x) * 0.12f;
-        outClusters[i].centerPos2D.y += (initPos2D[i].y - outClusters[i].centerPos2D.y) * 0.12f;
+        outClusters[i].centerPos2D.x += (initPos2D[i].x - outClusters[i].centerPos2D.x) * springK2;
+        outClusters[i].centerPos2D.y += (initPos2D[i].y - outClusters[i].centerPos2D.y) * springK2;
+      }
+    }
+
+    // Final Zero-Overlap Strict Enforcement Pass (guarantees every single category maintains a clear gap!)
+    for (int iter = 0; iter < 8; ++iter) {
+      if (!layoutActive.load()) return {outClusters, {}};
+      for (size_t i = 0; i < tagCount; ++i) {
+        for (size_t j = i + 1; j < tagCount; ++j) {
+          float dx = outClusters[j].centerPos2D.x - outClusters[i].centerPos2D.x;
+          float dy = outClusters[j].centerPos2D.y - outClusters[i].centerPos2D.y;
+          float dist = std::sqrt(dx * dx + dy * dy);
+          float r1 = getClusterEffectiveRadius(i, false);
+          float r2 = getClusterEffectiveRadius(j, false);
+          float minDist = r1 + r2 + 60.0f;
+
+          if (dist < minDist && dist > 0.01f) {
+            float overlap = (minDist - dist) * 0.5f;
+            float nx = dx / dist;
+            float ny = dy / dist;
+            outClusters[i].centerPos2D.x -= nx * overlap;
+            outClusters[i].centerPos2D.y -= ny * overlap;
+            outClusters[j].centerPos2D.x += nx * overlap;
+            outClusters[j].centerPos2D.y += ny * overlap;
+          }
+        }
       }
     }
 
@@ -948,7 +982,7 @@ SampleCloudComponent::calculateClusterLayoutInternal(
     float uCross = decayFeat + gaussNorm * 0.22f;
 
     // Dynamic cluster scale proportional to item count
-    float baseRadius = std::max(60.0f, 35.0f + std::sqrt(static_cast<float>(totalInTag)) * 16.0f);
+    float baseRadius = std::max(45.0f, 25.0f + std::sqrt(static_cast<float>(totalInTag)) * 8.5f);
 
     // Edge loosening: samples near the periphery get increased organic dispersion
     // so clusters dissolve softly into space without forming dense perimeter ridges

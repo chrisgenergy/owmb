@@ -37,3 +37,4 @@ This document persists the agreed-upon performance enhancement opportunities ide
 * **Proposed Enhancement**:
   * Partial VBO/SSBO subdata updates (`glBufferSubData`) for hover state/animation changes without rebuilding the full vertex array.
   * **Expected Gain**: Completely eliminates CPU-GPU bus overhead during active hover interaction.
+
