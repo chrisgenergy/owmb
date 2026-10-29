@@ -280,8 +280,6 @@ void OpenWavAudioProcessor::getStateInformation(juce::MemoryBlock& destData)
     juce::var stateVar = fullState.toVar();
     juce::String jsonString = juce::JSON::toString(stateVar, false);
     destData.replaceAll(jsonString.toRawUTF8(), jsonString.getNumBytesAsUTF8());
-
-    dbManager.saveToFile();
 }
 
 void OpenWavAudioProcessor::setStateInformation(const void* data, int sizeInBytes)
@@ -301,8 +299,6 @@ void OpenWavAudioProcessor::setStateInformation(const void* data, int sizeInByte
             }
         }
     }
-
-    dbManager.loadFromFile();
 }
 
 } // namespace openwav

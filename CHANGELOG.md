@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.1.2] - 2026-10-29
+
+### Fixed
+* **DAW State Saving Decoupling (`OpenWavAudioProcessor`)**:
+  * **Problem**: In `getStateInformation()` and `setStateInformation()`, the audio processor directly invoked `dbManager.saveToFile()` and `dbManager.loadFromFile()`. Whenever the host DAW initiated background auto-saves (e.g. every few minutes in Ableton Live, FL Studio, Bitwig), duplicated a track, or saved a project, the plugin synchronously serialized or deserialized the entire global sample database (`library_index.json`). With large sample libraries (50k–100k+ samples, 50MB–200MB+ JSON), this introduced noticeable DAW audio dropouts, UI freezes, and disk write race conditions between concurrent plugin instances overwriting the same database file.
+  * **Fix**: Decoupled the DAW's per-instance track session state from the global sample database by removing `dbManager.saveToFile()` from `getStateInformation()` and `dbManager.loadFromFile()` from `setStateInformation()`. Global library persistence remains completely self-managed by `TagDatabaseManager` (persisting on tag edits, scans, ratings, and plugin shutdown), eliminating DAW auto-save freezes while preserving full library integrity and instantaneous track state recall.
+
 ## [1.1.0] - 2026-10-28
 
 ### Added
