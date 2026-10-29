@@ -1129,6 +1129,13 @@ juce::String TagDatabaseManager::getCanonicalCategory(const juce::String& tag)
 
 juce::String TagDatabaseManager::getCanonicalCategoryForItem(const MediaItem& item)
 {
+    // 0. Silent audio files or utility dummy files (flatline/silence or < 5ms) are strictly "other"
+    if (item.tags.find("#Silent") != item.tags.end() || item.durationSeconds < 0.005 ||
+        item.fileName.equalsIgnoreCase("silent.aif") || item.fileName.equalsIgnoreCase("silent.wav"))
+    {
+        return "other";
+    }
+
     // 1. Evaluate using strict priority order (never alphabetical std::set iteration!)
     if (!item.tags.empty())
     {
@@ -1194,7 +1201,7 @@ bool TagDatabaseManager::areCategoriesCompatible(const juce::String& catA, const
 
 void TagDatabaseManager::classifyFromAudioFeatures(MediaItem& item)
 {
-    if (hasSemanticCategoryTag(item.tags))
+    if (hasSemanticCategoryTag(item.tags) || item.tags.find("#Silent") != item.tags.end() || item.durationSeconds < 0.005)
         return;
 
     const bool isLoop = (item.tags.find("#Loop") != item.tags.end()) ||
@@ -1959,6 +1966,13 @@ std::set<juce::String> TagDatabaseManager::inferTagsFromPath(const juce::String&
                 {
                     if (dirNameLower != "bd" && dirNameLower != "bds")
                         continue;
+                }
+
+                // A generic container folder named "drum" or "drums" must NOT tag all files inside as #DrumLoop
+                if ((std::strcmp(r.keyword, "drum") == 0 || std::strcmp(r.keyword, "drums") == 0) &&
+                    std::strcmp(r.tag, "#DrumLoop") == 0)
+                {
+                    continue;
                 }
 
                 if (isKeywordMatch(dirNameLower, r.keyword))

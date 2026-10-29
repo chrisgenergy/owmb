@@ -271,7 +271,7 @@ bool SampleCloudComponent::loadLayoutFromCache(uint64_t hash, const std::vector<
         return false;
       int magic = checkFis.readInt();
       int version = checkFis.readInt();
-      if (magic != 0x4F57434C || version != 10)
+      if (magic != 0x4F57434C || version != 11)
         isStaleOrCorrupt = true;
     }
     if (isStaleOrCorrupt) {
@@ -405,7 +405,7 @@ void SampleCloudComponent::saveLayoutToCache(
       return;
 
     fos->writeInt(0x4F57434C); // Magic 'OWCL'
-    fos->writeInt(10);         // Version 10 (Drum Kits & Beats Left Hemisphere Anchoring)
+    fos->writeInt(11);         // Version 11 (Silent Utility Exclusion & Consistent Category Palette)
     fos->writeInt64(static_cast<juce::int64>(hash));
     fos->writeInt(static_cast<int>(calculatedNodes.size()));
     fos->writeInt(static_cast<int>(calculatedClusters.size()));
@@ -464,7 +464,7 @@ void SampleCloudComponent::saveLayoutToCache(
     bool shouldDelete = false;
     {
       juce::FileInputStream scanFis(f);
-      if (!scanFis.openedOk() || scanFis.readInt() != 0x4F57434C || scanFis.readInt() < 10) {
+      if (!scanFis.openedOk() || scanFis.readInt() != 0x4F57434C || scanFis.readInt() < 11) {
         shouldDelete = true;
       }
     }
@@ -561,7 +561,12 @@ void SampleCloudComponent::runLayoutAsync(std::vector<MediaItem> items, uint64_t
     node.item = item;
     node.primaryTag = getPrimaryCategoryTag(item.tags);
     node.canonicalCategory = getCanonicalAtlasCategory(item).toLowerCase();
-    node.colour = getColourForTag(node.primaryTag);
+    juce::String effectiveCat = (node.canonicalCategory.isNotEmpty() && node.canonicalCategory != "other")
+                                    ? node.canonicalCategory
+                                    : (node.primaryTag.isNotEmpty() && node.primaryTag != "Untagged" && !TagDatabaseManager::isTechnicalOrModifierTag(node.primaryTag)
+                                           ? TagDatabaseManager::getCanonicalCategory(node.primaryTag)
+                                           : "other");
+    node.colour = getColourForTag(effectiveCat);
     node.radius = 4.0f;
     node.hoverScale = 1.0f;
     newNodes.push_back(std::move(node));
