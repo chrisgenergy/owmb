@@ -270,7 +270,7 @@ bool SampleCloudComponent::loadLayoutFromCache(uint64_t hash, const std::vector<
   if (fis.readInt() != 0x4F57434C) // Magic 'OWCL'
     return false;
 
-  if (fis.readInt() != 1) // Version 1
+  if (fis.readInt() != 2) // Version 2 (Enhanced Acoustic Grouping A+B+C)
     return false;
 
   if (static_cast<uint64_t>(fis.readInt64()) != hash)
@@ -391,7 +391,7 @@ void SampleCloudComponent::saveLayoutToCache(
       return;
 
     fos->writeInt(0x4F57434C); // Magic 'OWCL'
-    fos->writeInt(1);          // Version
+    fos->writeInt(2);          // Version 2 (Enhanced Acoustic Grouping A+B+C)
     fos->writeInt64(static_cast<juce::int64>(hash));
     fos->writeInt(static_cast<int>(calculatedNodes.size()));
     fos->writeInt(static_cast<int>(calculatedClusters.size()));
@@ -842,23 +842,22 @@ SampleCloudComponent::calculateClusterLayoutInternal(
       float logB = std::log(std::max(0.002f, bright * 4.0f));
       float audioAxis = std::tanh((logB - 0.10f) * 0.70f);
 
-      // 55% audio brightness alignment + 45% organic sample dispersion
-      // Guarantees each sample has an individual coordinate and prevents boundary clustering
-      uAxis = audioAxis * 0.55f + hashVal * 0.45f;
+      // Recommendation B: High-fidelity 78% audio brightness alignment + 22% organic dispersion
+      uAxis = audioAxis * 0.78f + hashVal * 0.22f;
     } else {
       uAxis = hashVal;
     }
 
-    // --- 2. Cross-Axis Coordinate (Gaussian Box-Muller falloff around nebula spine) ---
+    // --- 2. Cross-Axis Coordinate (Recommendation B: 55% Decay Ratio + 22% Gaussian Normal Falloff) ---
     float u1 = std::max(0.0001f, static_cast<float>((h2 >> 4) % 10000) / 10000.0f);
     float u2 = static_cast<float>((h3 >> 4) % 10000) / 10000.0f;
     float gaussNorm = std::sqrt(-2.0f * std::log(u1)) * std::cos(2.0f * juce::MathConstants<float>::pi * u2);
 
     float decayFeat = 0.0f;
     if (node.item.decayRatio > 0.001) {
-      decayFeat = std::tanh((static_cast<float>(node.item.decayRatio) - 0.25f) * 2.0f) * 0.35f;
+      decayFeat = std::tanh((static_cast<float>(node.item.decayRatio) - 0.25f) * 2.2f) * 0.55f;
     }
-    float uCross = decayFeat + gaussNorm * 0.34f;
+    float uCross = decayFeat + gaussNorm * 0.22f;
 
     // Dynamic cluster scale proportional to item count
     float baseRadius = std::max(60.0f, 35.0f + std::sqrt(static_cast<float>(totalInTag)) * 16.0f);
@@ -868,9 +867,9 @@ SampleCloudComponent::calculateClusterLayoutInternal(
     float rFromCore = std::sqrt(uAxis * uAxis + uCross * uCross);
     float edgeLoosen = 1.0f + std::min(rFromCore * 0.5f, 1.0f);
 
-    float jX = (((static_cast<float>(h3 % 1001) - 500.0f) / 500.0f) * 6.0f) * edgeLoosen;
-    float jY = (((static_cast<float>(h4 % 1001) - 500.0f) / 500.0f) * 6.0f) * edgeLoosen;
-    float jZ = (((static_cast<float>((h1 ^ h4) % 1001) - 500.0f) / 500.0f) * 6.0f) * edgeLoosen;
+    float jX = (((static_cast<float>(h3 % 1001) - 500.0f) / 500.0f) * 5.0f) * edgeLoosen;
+    float jY = (((static_cast<float>(h4 % 1001) - 500.0f) / 500.0f) * 5.0f) * edgeLoosen;
+    float jZ = (((static_cast<float>((h1 ^ h4) % 1001) - 500.0f) / 500.0f) * 5.0f) * edgeLoosen;
 
     // 2D Rotation by cluster elongation angle
     float cosA = std::cos(axisAngle);
@@ -881,10 +880,49 @@ SampleCloudComponent::calculateClusterLayoutInternal(
     // 2D Position
     node.pos2D = { cPos2D.x + posX_rel, cPos2D.y + posY_rel, 0.0f };
 
-    // 3D Position: Tilted galactic disc with organic thickness
-    float zThickness = ((static_cast<float>((h2 ^ h3) % 2001) - 1000.0f) / 1000.0f) * (baseRadius * 0.35f);
-    float posZ_rel = uCross * baseRadius * 0.40f + zThickness + jZ;
+    // Recommendation A: 3D Position with Crest Factor (Acoustic Dynamic Punch on Z-depth)
+    float dynamicZ = 0.0f;
+    if (node.item.crestFactor > 0.1) {
+      // Dynamic punch (Crest Factor > 3.2 dB) maps forward (+Z), compressed/dense maps backward (-Z)
+      dynamicZ = std::tanh((static_cast<float>(node.item.crestFactor) - 3.2f) * 0.45f) * (baseRadius * 0.50f);
+    }
+    float zJitter = ((static_cast<float>((h2 ^ h3) % 2001) - 1000.0f) / 1000.0f) * (baseRadius * 0.15f);
+    float posZ_rel = dynamicZ + zJitter + jZ;
     node.pos3D = { cPos3D.x + posX_rel, cPos3D.y + posY_rel, cPos3D.z + posZ_rel };
+
+    // Recommendation C: Semantic Sub-Tag Micro-Attraction (Zero Extra Text on Map)
+    // Subtle 8% gravitational pull toward neighbor categories if sample has secondary tags (e.g. #808 -> Bass, #Rim -> Clave)
+    Vector3D subTagPull2D { 0.0f, 0.0f, 0.0f };
+    Vector3D subTagPull3D { 0.0f, 0.0f, 0.0f };
+    int pullMatches = 0;
+
+    for (const auto &rawTag : node.item.tags) {
+      juce::String cleanTag = rawTag.trim().toLowerCase();
+      if (cleanTag.startsWith("#")) cleanTag = cleanTag.substring(1);
+
+      juce::String targetCat = TagDatabaseManager::getCanonicalCategory(cleanTag);
+      if (targetCat.isNotEmpty() && targetCat != node.canonicalCategory) {
+        auto it2D = tagCenters2D.find(targetCat);
+        auto it3D = tagCenters3D.find(targetCat);
+        if (it2D != tagCenters2D.end() && it3D != tagCenters3D.end()) {
+          auto dir2D = it2D->second - cPos2D;
+          auto dir3D = it3D->second - cPos3D;
+          subTagPull2D = subTagPull2D + dir2D * 0.08f;
+          subTagPull3D = subTagPull3D + dir3D * 0.08f;
+          pullMatches++;
+          if (pullMatches >= 2) break; // Limit to at most 2 secondary influences
+        }
+      }
+    }
+
+    if (pullMatches > 0) {
+      float scalePull = 1.0f / static_cast<float>(pullMatches);
+      node.pos2D.x += subTagPull2D.x * scalePull;
+      node.pos2D.y += subTagPull2D.y * scalePull;
+      node.pos3D.x += subTagPull3D.x * scalePull;
+      node.pos3D.y += subTagPull3D.y * scalePull;
+      node.pos3D.z += subTagPull3D.z * scalePull;
+    }
   }
 
   // --- 3. Intra-Cluster Node Repulsion Pass (Collision Avoidance + Soft Spring Anchoring) ---
