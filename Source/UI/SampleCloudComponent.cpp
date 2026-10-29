@@ -270,7 +270,7 @@ bool SampleCloudComponent::loadLayoutFromCache(uint64_t hash, const std::vector<
   if (fis.readInt() != 0x4F57434C) // Magic 'OWCL'
     return false;
 
-  if (fis.readInt() != 3) // Version 3 (Low-end Anchors & Semantic Spring Tethering)
+  if (fis.readInt() != 4) // Version 4 (Center of Mass & Category Unification)
     return false;
 
   if (static_cast<uint64_t>(fis.readInt64()) != hash)
@@ -391,7 +391,7 @@ void SampleCloudComponent::saveLayoutToCache(
       return;
 
     fos->writeInt(0x4F57434C); // Magic 'OWCL'
-    fos->writeInt(3);          // Version 3 (Low-end Anchors & Semantic Spring Tethering)
+    fos->writeInt(4);          // Version 4 (Center of Mass & Category Unification)
     fos->writeInt64(static_cast<juce::int64>(hash));
     fos->writeInt(static_cast<int>(calculatedNodes.size()));
     fos->writeInt(static_cast<int>(calculatedClusters.size()));
@@ -646,11 +646,21 @@ SampleCloudComponent::calculateClusterLayoutInternal(
   if (nodesCopy.empty())
     return {outClusters, {}};
 
+  auto getNodeCategory = [](const CloudNode &n) -> juce::String {
+    juce::String cat = n.canonicalCategory.trim().toLowerCase();
+    if (cat.isNotEmpty() && cat != "other")
+      return cat;
+    juce::String pt = n.primaryTag.trim().toLowerCase();
+    if (pt.startsWith("#")) pt = pt.substring(1);
+    return pt.isNotEmpty() ? pt : "other";
+  };
+
   std::unordered_map<juce::String, TagCluster> clusterMap;
   for (const auto &n : nodesCopy) {
-    auto &c = clusterMap[n.primaryTag];
-    c.tag = n.primaryTag;
-    c.colour = n.colour;
+    juce::String catKey = getNodeCategory(n);
+    auto &c = clusterMap[catKey];
+    c.tag = catKey;
+    c.colour = getColourForTag(catKey);
     c.count++;
   }
 
@@ -830,12 +840,13 @@ SampleCloudComponent::calculateClusterLayoutInternal(
   std::unordered_map<juce::String, int> tagItemCounts;
   for (auto &node : nodesCopy) {
     if (!layoutActive.load()) return {outClusters, {}};
-    auto cPos3D = tagCenters3D[node.primaryTag];
-    auto cPos2D = tagCenters2D[node.primaryTag];
-    int countIdx = tagItemCounts[node.primaryTag]++;
-    int totalInTag = tagTotalCounts[node.primaryTag];
+    juce::String catKey = getNodeCategory(node);
+    auto cPos3D = tagCenters3D[catKey];
+    auto cPos2D = tagCenters2D[catKey];
+    int countIdx = tagItemCounts[catKey]++;
+    int totalInTag = tagTotalCounts[catKey];
 
-    auto anc = findAnchor(node.primaryTag);
+    auto anc = findAnchor(catKey);
     float axisAngle = anc.angle;
     float axisStretch = (anc.stretch > 0.01f) ? anc.stretch : 1.6f;
 
@@ -946,7 +957,7 @@ SampleCloudComponent::calculateClusterLayoutInternal(
   // and maintain a clean minimum visual distance just like Atlas 2!
   std::unordered_map<juce::String, std::vector<size_t>> clusterNodeIndices;
   for (size_t i = 0; i < nodesCopy.size(); ++i) {
-    clusterNodeIndices[nodesCopy[i].primaryTag].push_back(i);
+    clusterNodeIndices[getNodeCategory(nodesCopy[i])].push_back(i);
   }
 
   std::vector<Vector3D> origPos2D(nodesCopy.size());
@@ -1044,6 +1055,33 @@ SampleCloudComponent::calculateClusterLayoutInternal(
     if (!layoutActive.load()) return {outClusters, {}};
     node.targetPos = is2DMode ? node.pos2D : node.pos3D;
     node.currentPos = node.targetPos;
+  }
+
+  // Recalculate true physical Center of Mass for each cluster based on actual sample positions
+  std::unordered_map<juce::String, double> sumX2, sumY2, sumX3, sumY3, sumZ3;
+  std::unordered_map<juce::String, int> nodeCountPerCat;
+
+  for (const auto &node : nodesCopy) {
+    juce::String catKey = getNodeCategory(node);
+    sumX2[catKey] += node.pos2D.x;
+    sumY2[catKey] += node.pos2D.y;
+    sumX3[catKey] += node.pos3D.x;
+    sumY3[catKey] += node.pos3D.y;
+    sumZ3[catKey] += node.pos3D.z;
+    nodeCountPerCat[catKey]++;
+  }
+
+  for (auto &cl : outClusters) {
+    int cnt = nodeCountPerCat[cl.tag];
+    if (cnt > 0) {
+      double inv = 1.0 / static_cast<double>(cnt);
+      cl.centerPos2D = { static_cast<float>(sumX2[cl.tag] * inv),
+                         static_cast<float>(sumY2[cl.tag] * inv), 0.0f };
+      cl.centerPos3D = { static_cast<float>(sumX3[cl.tag] * inv),
+                         static_cast<float>(sumY3[cl.tag] * inv),
+                         static_cast<float>(sumZ3[cl.tag] * inv) };
+      cl.centerPos = is2DMode ? cl.centerPos2D : cl.centerPos3D;
+    }
   }
 
   // Inter-cluster constellation connections (for 3D mode)
