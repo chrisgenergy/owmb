@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.1.3] - 2026-10-29
+
+### Fixed
+* **Drum One-Shot Routing & Inviolability (`TagDatabaseManager`)**:
+  * **Problem**: In `getCanonicalCategoryForItem`, an overly broad early return checking `filePath.containsIgnoreCase("drums")` inadvertently intercepted single drum one-shots located in standard directory paths (e.g. `.../Samples/One Shots/Drums/Kick/...`) before their primary category tags (`#Kick`, `#Tom`, `#Snare`, etc.) were evaluated. This forced thousands of drum one-shots into the `loop` category cluster and shriveled the kick cluster.
+  * **Fix**: Removed the premature early return, restoring strict Priority Rank 1 for drum one-shots (`#Kick`, `#Tom`, `#Snare`, `#HiHat`, `#Clap`, `#Cymbal`, etc.). Drum one-shots are now guaranteed to land exclusively in their dedicated instrument clusters.
+* **Beat Misclassification Safeguard (`TagDatabaseManager::isMisclassifiedBeat`)**:
+  * **Problem**: Full drum grooves, breakbeats, and drum rack kit previews with massive low-end content (e.g. `Straight EDM Beat 128 bpm.wav`, `Hot Rod Kit.adg.ogg`) were frequently misclassified as `bass` or `synth` by low-frequency spectral DSP analysis.
+  * **Fix**: Implemented a targeted predicate (`isMisclassifiedBeat`) that redirects samples to `loop` only if they would otherwise resolve to `bass` or `synth`, contain explicit groove/kit/beat indicators (filename keywords or loop directory paths with duration $\ge 1.5$s), and do not explicitly mention `"bass"` in their title. Genuine bass synthesizer presets (e.g. `King Bass.adv.ogg`, `Growl Bass.adv.ogg`) remain preserved in the `bass` cluster.
+* **Inference Rule Hygiene & Index Sanitization**:
+  * Removed ambiguous generic keywords (`"drum"`, `"drums"`, `"kit"`, `"break"`) from inferring `#DrumLoop` during folder and file scanning, preventing accidental loop tags on standard drum one-shots.
+  * Sanitized `library_index.json` to purge erroneous `#DrumLoop` and `#Loop` tags from 2,687 drum one-shot files, restoring `#OneShot`.
+
+### Changed
+* **Sample Cloud Binary Layout Cache Version Bump (Version 13)**:
+  * Incremented binary cache format version to `13` in `SampleCloudComponent` (`loadLayoutFromCache`, `saveLayoutToCache`, and auto-pruning passes) to automatically purge obsolete layouts containing displaced one-shots and compute clean, overlap-free coordinates.
+
+### Added
+* **Technical & Behavioral Map Specification (`docs/SAMPLE_MAP_BEHAVIOR.md`)**:
+  * Authored a comprehensive technical reference and behavioral specification covering the 3-tier categorization engine, priority hierarchy, 2D/3D intra-cluster timbral physics, collision avoidance relaxation, interaction models, and visual color palettes.
+
 ## [1.1.2] - 2026-10-29
 
 ### Added
