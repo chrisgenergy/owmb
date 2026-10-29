@@ -270,7 +270,7 @@ bool SampleCloudComponent::loadLayoutFromCache(uint64_t hash, const std::vector<
   if (fis.readInt() != 0x4F57434C) // Magic 'OWCL'
     return false;
 
-  if (fis.readInt() != 2) // Version 2 (Enhanced Acoustic Grouping A+B+C)
+  if (fis.readInt() != 3) // Version 3 (Low-end Anchors & Semantic Spring Tethering)
     return false;
 
   if (static_cast<uint64_t>(fis.readInt64()) != hash)
@@ -391,7 +391,7 @@ void SampleCloudComponent::saveLayoutToCache(
       return;
 
     fos->writeInt(0x4F57434C); // Magic 'OWCL'
-    fos->writeInt(2);          // Version 2 (Enhanced Acoustic Grouping A+B+C)
+    fos->writeInt(3);          // Version 3 (Low-end Anchors & Semantic Spring Tethering)
     fos->writeInt64(static_cast<juce::int64>(hash));
     fos->writeInt(static_cast<int>(calculatedNodes.size()));
     fos->writeInt(static_cast<int>(calculatedClusters.size()));
@@ -668,8 +668,8 @@ SampleCloudComponent::calculateClusterLayoutInternal(
 
   static const std::unordered_map<juce::String, AtlasAnchorDef> atlasAnchors = {
     // Left side: Kicks, Bass, Toms, Bongos (Low end & organic punch)
-    { "kick",              { -0.62f, -0.22f, -0.15f, -0.45f, 2.0f } },
-    { "bass",              { -0.78f, -0.58f, -0.25f, -0.60f, 2.1f } },
+    { "kick",              { -0.70f, -0.65f, -0.20f, -0.45f, 2.0f } },
+    { "bass",              { -0.85f, -0.52f, -0.25f, -0.60f, 2.1f } },
     { "tom",               { -0.44f,  0.42f,  0.15f,  2.10f, 2.3f } },
     { "bongo/conga",       { -0.14f,  0.78f, -0.10f,  0.85f, 1.6f } },
     { "guitar",            { -0.70f,  0.22f, -0.12f, -0.80f, 1.8f } },
@@ -708,8 +708,8 @@ SampleCloudComponent::calculateClusterLayoutInternal(
     if (t.startsWith("#")) t = t.substring(1);
 
     // Fine-grained sub-tag anchors within their semantic region
-    if (t == "subkick") return { -0.66f, -0.28f, -0.18f, -0.48f, 2.0f };
-    if (t == "subbass") return { -0.82f, -0.64f, -0.28f, -0.62f, 2.1f };
+    if (t == "subkick") return { -0.72f, -0.70f, -0.22f, -0.48f, 2.0f };
+    if (t == "subbass") return { -0.88f, -0.58f, -0.28f, -0.62f, 2.1f };
     if (t == "subdrop" || t == "impact") return {  0.34f, -0.24f, -0.24f, -1.05f, 1.7f };
     if (t == "riser" || t == "sweep" || t == "downlifter") return {  0.48f, -0.06f, -0.20f, -1.15f, 1.9f };
     if (t == "atmosphere" || t == "texture" || t == "vinyl" || t == "foley" || t == "glitch")
@@ -750,7 +750,14 @@ SampleCloudComponent::calculateClusterLayoutInternal(
       outClusters[i].centerPos3D = { ax * baseSpread3D, ay * baseSpread3D * 0.85f, az * baseSpread3D };
     }
 
-    // 3D Relaxation
+    std::vector<Vector3D> initPos2D(tagCount);
+    std::vector<Vector3D> initPos3D(tagCount);
+    for (size_t i = 0; i < tagCount; ++i) {
+      initPos2D[i] = outClusters[i].centerPos2D;
+      initPos3D[i] = outClusters[i].centerPos3D;
+    }
+
+    // 3D Relaxation with gentle semantic restoring spring
     for (int iter = 0; iter < 16; ++iter) {
       if (!layoutActive.load()) return {outClusters, {}};
       for (size_t i = 0; i < tagCount; ++i) {
@@ -769,9 +776,14 @@ SampleCloudComponent::calculateClusterLayoutInternal(
           }
         }
       }
+      for (size_t i = 0; i < tagCount; ++i) {
+        outClusters[i].centerPos3D.x += (initPos3D[i].x - outClusters[i].centerPos3D.x) * 0.08f;
+        outClusters[i].centerPos3D.y += (initPos3D[i].y - outClusters[i].centerPos3D.y) * 0.08f;
+        outClusters[i].centerPos3D.z += (initPos3D[i].z - outClusters[i].centerPos3D.z) * 0.08f;
+      }
     }
 
-    // 2D Relaxation (Planar Repulsion)
+    // 2D Relaxation (Planar Repulsion with gentle semantic restoring spring)
     for (int iter = 0; iter < 24; ++iter) {
       if (!layoutActive.load()) return {outClusters, {}};
       for (size_t i = 0; i < tagCount; ++i) {
@@ -794,6 +806,10 @@ SampleCloudComponent::calculateClusterLayoutInternal(
             outClusters[j].centerPos2D.y += ny * overlap;
           }
         }
+      }
+      for (size_t i = 0; i < tagCount; ++i) {
+        outClusters[i].centerPos2D.x += (initPos2D[i].x - outClusters[i].centerPos2D.x) * 0.12f;
+        outClusters[i].centerPos2D.y += (initPos2D[i].y - outClusters[i].centerPos2D.y) * 0.12f;
       }
     }
 
