@@ -1136,6 +1136,18 @@ juce::String TagDatabaseManager::getCanonicalCategoryForItem(const MediaItem& it
         return "other";
     }
 
+    // Drum Beat vs legacy false-positive #Bass override:
+    // If an item is a beat/drum/kit groove and does NOT have "bass" in its filename, it must NEVER be placed in "bass"!
+    bool isBeatOrDrum = (item.fileName.containsIgnoreCase("beat") || item.fileName.containsIgnoreCase("drum") ||
+                         item.fileName.containsIgnoreCase("kit") || item.fileName.containsIgnoreCase("groove") ||
+                         item.fileName.containsIgnoreCase("break") ||
+                         item.filePath.containsIgnoreCase("drums") || item.filePath.containsIgnoreCase("drum loop"));
+    bool explicitlyHasBassInName = item.fileName.containsIgnoreCase("bass");
+    if (isBeatOrDrum && !explicitlyHasBassInName)
+    {
+        return "loop";
+    }
+
     // 1. Evaluate using strict priority order (never alphabetical std::set iteration!)
     if (!item.tags.empty())
     {
@@ -1278,7 +1290,13 @@ void TagDatabaseManager::classifyFromAudioFeatures(MediaItem& item)
             }
         }
 
-        if (item.highFreqRatio < 0.14 && item.zcr < 0.045)
+        bool isBeatOrDrum = (item.fileName.containsIgnoreCase("beat") || item.fileName.containsIgnoreCase("drum") ||
+                             item.fileName.containsIgnoreCase("kit") || item.fileName.containsIgnoreCase("groove") ||
+                             item.fileName.containsIgnoreCase("break") ||
+                             item.filePath.containsIgnoreCase("drums") || item.filePath.containsIgnoreCase("drum loop"));
+        bool explicitlyHasBassInName = item.fileName.containsIgnoreCase("bass");
+
+        if (item.highFreqRatio < 0.14 && item.zcr < 0.045 && (!isBeatOrDrum || explicitlyHasBassInName))
         {
             item.tags.insert("#BassLoop");
             item.tags.insert("#Bass");
@@ -1516,6 +1534,20 @@ void TagDatabaseManager::sanitizeTags(std::set<juce::String>& tags)
 
 void TagDatabaseManager::sanitizeItem(MediaItem& item)
 {
+    // Strip accidental #Bass/#BassLoop on beats/drums that lack "bass" in their filename
+    bool isBeatOrDrum = (item.fileName.containsIgnoreCase("beat") || item.fileName.containsIgnoreCase("drum") ||
+                         item.fileName.containsIgnoreCase("kit") || item.fileName.containsIgnoreCase("groove") ||
+                         item.fileName.containsIgnoreCase("break") ||
+                         item.filePath.containsIgnoreCase("drums") || item.filePath.containsIgnoreCase("drum loop"));
+    bool explicitlyHasBassInName = item.fileName.containsIgnoreCase("bass");
+    if (isBeatOrDrum && !explicitlyHasBassInName)
+    {
+        item.tags.erase("#Bass");
+        item.tags.erase("#BassLoop");
+        item.tags.erase("#SubBass");
+        item.tags.insert("#DrumLoop");
+    }
+
     sanitizeTags(item.tags);
 
     // Keep item.bpm 100% synchronized with sanitized #*BPM tags

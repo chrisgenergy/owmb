@@ -271,7 +271,7 @@ bool SampleCloudComponent::loadLayoutFromCache(uint64_t hash, const std::vector<
         return false;
       int magic = checkFis.readInt();
       int version = checkFis.readInt();
-      if (magic != 0x4F57434C || version != 11)
+      if (magic != 0x4F57434C || version != 12)
         isStaleOrCorrupt = true;
     }
     if (isStaleOrCorrupt) {
@@ -405,7 +405,7 @@ void SampleCloudComponent::saveLayoutToCache(
       return;
 
     fos->writeInt(0x4F57434C); // Magic 'OWCL'
-    fos->writeInt(11);         // Version 11 (Silent Utility Exclusion & Consistent Category Palette)
+    fos->writeInt(12);         // Version 12 (Drum Beat Low-End Override & Clean Category Routing)
     fos->writeInt64(static_cast<juce::int64>(hash));
     fos->writeInt(static_cast<int>(calculatedNodes.size()));
     fos->writeInt(static_cast<int>(calculatedClusters.size()));
@@ -464,7 +464,7 @@ void SampleCloudComponent::saveLayoutToCache(
     bool shouldDelete = false;
     {
       juce::FileInputStream scanFis(f);
-      if (!scanFis.openedOk() || scanFis.readInt() != 0x4F57434C || scanFis.readInt() < 11) {
+      if (!scanFis.openedOk() || scanFis.readInt() != 0x4F57434C || scanFis.readInt() < 12) {
         shouldDelete = true;
       }
     }
