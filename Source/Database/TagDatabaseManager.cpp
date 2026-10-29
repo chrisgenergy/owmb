@@ -1014,19 +1014,18 @@ juce::String TagDatabaseManager::getPrimaryCategoryTag(const std::set<juce::Stri
             return prio;
     }
 
+    // Strictly search for true semantic instrument/sound categories, never technical metadata
     for (const auto& t : tags)
     {
-        if (!t.endsWithIgnoreCase("BPM") && !t.startsWithIgnoreCase("#Key_") &&
-            t != "#Wav" && t != "#MP3" && t != "#FLAC" && t != "#OGG" && t != "#AIFF" &&
-            t != "#Stereo" && t != "#Mono" && t != "#Short" && t != "#Long" &&
-            t != "#Punchy" && t != "#Bright" && t != "#Warm" &&
-            t != "#Dry" && t != "#Wet" && t != "#Silent" && t != "#Converted")
-        {
+        if (t.startsWith("#") && !isTechnicalOrModifierTag(t))
             return t;
-        }
     }
 
-    return *tags.begin();
+    // Structural fallback: loop or oneshot if present
+    if (tags.find("#Loop") != tags.end()) return "#Loop";
+    if (tags.find("#OneShot") != tags.end()) return "#OneShot";
+
+    return "Untagged";
 }
 
 juce::String TagDatabaseManager::getCanonicalCategory(const juce::String& tag)
@@ -1037,6 +1036,15 @@ juce::String TagDatabaseManager::getCanonicalCategory(const juce::String& tag)
 
     if (t.isEmpty() || t == "untagged")
         return "other";
+
+    // Strictly guard against technical metadata (BPM numbers, Keys, file extensions, channels, lengths)
+    if (t.endsWith("bpm") || t.startsWith("key_") ||
+        t == "wav" || t == "mp3" || t == "flac" || t == "ogg" || t == "aiff" ||
+        t == "stereo" || t == "mono" || t == "short" || t == "long" ||
+        t == "punchy" || t == "bright" || t == "warm" || t == "dry" || t == "wet")
+    {
+        return "other";
+    }
 
     if (t == "subkick" || t == "kick") return "kick";
     if (t == "snare") return "snare";
@@ -1140,7 +1148,7 @@ juce::String TagDatabaseManager::getCanonicalCategoryForItem(const MediaItem& it
     {
         auto inferred = inferTagsFromPath(item.filePath, item.durationSeconds, item.numChannels);
         juce::String primary = getPrimaryCategoryTag(inferred);
-        if (primary != "Untagged" && primary != "#OneShot")
+        if (primary != "Untagged" && primary != "#OneShot" && !isTechnicalOrModifierTag(primary))
         {
             juce::String cat = getCanonicalCategory(primary);
             if (cat != "other")
@@ -1154,7 +1162,7 @@ juce::String TagDatabaseManager::getCanonicalCategoryForItem(const MediaItem& it
         MediaItem temp = item;
         classifyFromAudioFeatures(temp);
         juce::String primary = getPrimaryCategoryTag(temp.tags);
-        if (primary != "Untagged" && primary != "#OneShot")
+        if (primary != "Untagged" && primary != "#OneShot" && !isTechnicalOrModifierTag(primary))
         {
             juce::String cat = getCanonicalCategory(primary);
             if (cat != "other")
@@ -1588,6 +1596,17 @@ std::set<juce::String> TagDatabaseManager::inferTagsFromPath(const juce::String&
     if (extractedBpm >= 40.0 && extractedBpm <= 260.0)
     {
         tags.insert("#" + juce::String(juce::roundToInt(extractedBpm)) + "BPM");
+
+        // Conservative musical loop detection:
+        // A sample is considered a loop if it spans at least 2 full musical bars AND is >= 4.5 seconds long,
+        // or spans multiple bars and has an identified musical key (e.g. 8-bar melodic progression).
+        // (Note: Kicks with long tails never reach 4.5s and decay monotonically, so they stay #OneShot).
+        double secondsPerBar = (60.0 / extractedBpm) * 4.0;
+        if ((durationSeconds >= secondsPerBar * 2.0 && durationSeconds >= 4.5) ||
+            (keyTag.isNotEmpty() && durationSeconds >= secondsPerBar * 2.0 && durationSeconds >= 3.0))
+        {
+            tags.insert("#Loop");
+        }
     }
 
     // 5. Comprehensive Keyword Rules Dictionary
@@ -1671,7 +1690,7 @@ std::set<juce::String> TagDatabaseManager::inferTagsFromPath(const juce::String&
         { "808bass", "#808Bass", true }, { "808_bass", "#808Bass", true }, { "808-bass", "#808Bass", true }, { "808 bass", "#808Bass", true },
 
         // Melodic & Harmonic Instruments
-        { "chord", "#Keys", true }, { "chords", "#Keys", true },
+        { "chord", "#Keys", true }, { "chords", "#Keys", true }, { "notes", "#Keys", true }, { "progression", "#Keys", true }, { "progressions", "#Keys", true },
         { "grandpiano", "#Piano", true }, { "grand_piano", "#Piano", true }, { "piano", "#Piano", true }, { "pianos", "#Piano", true },
         { "rhodes", "#Rhodes", true }, { "epiano", "#Rhodes", true }, { "e_piano", "#Rhodes", true }, { "wurlitzer", "#Rhodes", true },
         { "organ", "#Organ", true }, { "organs", "#Organ", true },
@@ -1784,7 +1803,7 @@ std::set<juce::String> TagDatabaseManager::inferTagsFromPath(const juce::String&
         { "toploop", "#TopLoop", true }, { "toploops", "#TopLoop", true },
         { "top_loop", "#TopLoop", true }, { "top_loops", "#TopLoop", true },
         { "top-loop", "#TopLoop", true }, { "top-loops", "#TopLoop", true },
-        { "melodicloop", "#MelodicLoop", true }, { "melodicloops", "#MelodicLoop", true },
+        { "melody", "#MelodicLoop", true }, { "melodies", "#MelodicLoop", true }, { "riff", "#MelodicLoop", true }, { "riffs", "#MelodicLoop", true }, { "melodicloop", "#MelodicLoop", true }, { "melodicloops", "#MelodicLoop", true },
         { "melodic_loop", "#MelodicLoop", true }, { "melodic_loops", "#MelodicLoop", true },
         { "vocalloop", "#VocalLoop", true }, { "vocalloops", "#VocalLoop", true },
         { "vocal_loop", "#VocalLoop", true }, { "vocal_loops", "#VocalLoop", true },

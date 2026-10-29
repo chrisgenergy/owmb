@@ -271,7 +271,7 @@ bool SampleCloudComponent::loadLayoutFromCache(uint64_t hash, const std::vector<
         return false;
       int magic = checkFis.readInt();
       int version = checkFis.readInt();
-      if (magic != 0x4F57434C || version != 8)
+      if (magic != 0x4F57434C || version != 9)
         isStaleOrCorrupt = true;
     }
     if (isStaleOrCorrupt) {
@@ -405,7 +405,7 @@ void SampleCloudComponent::saveLayoutToCache(
       return;
 
     fos->writeInt(0x4F57434C); // Magic 'OWCL'
-    fos->writeInt(8);          // Version 8 (Acoustic Rank Mapping & Zero-Overlap Mosaic)
+    fos->writeInt(9);          // Version 9 (Strict Technical Tag Shield & Musical Loop Guard)
     fos->writeInt64(static_cast<juce::int64>(hash));
     fos->writeInt(static_cast<int>(calculatedNodes.size()));
     fos->writeInt(static_cast<int>(calculatedClusters.size()));
@@ -464,7 +464,7 @@ void SampleCloudComponent::saveLayoutToCache(
     bool shouldDelete = false;
     {
       juce::FileInputStream scanFis(f);
-      if (!scanFis.openedOk() || scanFis.readInt() != 0x4F57434C || scanFis.readInt() < 8) {
+      if (!scanFis.openedOk() || scanFis.readInt() != 0x4F57434C || scanFis.readInt() < 9) {
         shouldDelete = true;
       }
     }
@@ -688,11 +688,17 @@ SampleCloudComponent::calculateClusterLayoutInternal(
 
   auto getNodeCategory = [](const CloudNode &n) -> juce::String {
     juce::String cat = n.canonicalCategory.trim().toLowerCase();
-    if (cat.isNotEmpty() && cat != "other")
+    if (cat.isNotEmpty() && cat != "other" && !cat.endsWith("bpm") && !cat.startsWith("key_"))
       return cat;
-    juce::String pt = n.primaryTag.trim().toLowerCase();
-    if (pt.startsWith("#")) pt = pt.substring(1);
-    return pt.isNotEmpty() ? pt : "other";
+    juce::String pt = n.primaryTag.trim();
+    if (pt.isNotEmpty() && pt != "Untagged" && !TagDatabaseManager::isTechnicalOrModifierTag(pt)) {
+      if (pt.startsWith("#")) pt = pt.substring(1);
+      juce::String canon = TagDatabaseManager::getCanonicalCategory(pt);
+      if (canon.isNotEmpty() && canon != "other")
+        return canon;
+      return pt.toLowerCase();
+    }
+    return "other";
   };
 
   std::unordered_map<juce::String, TagCluster> clusterMap;
@@ -1960,7 +1966,14 @@ void SampleCloudComponent::paintOverlay(juce::Graphics &g) {
           g.setFont(metaFont);
 
           // Primary Tag Badge with Neon Glow Accent
-          juce::String tagText = n.primaryTag.startsWith("#") ? n.primaryTag.substring(1) : n.primaryTag;
+          juce::String tagText;
+          if (n.primaryTag.isNotEmpty() && n.primaryTag != "Untagged" && !TagDatabaseManager::isTechnicalOrModifierTag(n.primaryTag)) {
+            tagText = n.primaryTag.startsWith("#") ? n.primaryTag.substring(1) : n.primaryTag;
+          } else if (n.canonicalCategory.isNotEmpty() && n.canonicalCategory != "other") {
+            tagText = n.canonicalCategory;
+          } else {
+            tagText = "Other";
+          }
           float tagW = metaFont.getStringWidthFloat(tagText) + 12.0f;
           juce::Rectangle<float> tagBounds(cardX + 12.0f, badgeY, tagW, 18.0f);
           g.setColour(n.colour.withAlpha(0.25f));
