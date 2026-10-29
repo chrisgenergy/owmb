@@ -267,11 +267,14 @@ bool SampleCloudComponent::loadLayoutFromCache(uint64_t hash, const std::vector<
     return false;
 
   // Header validation
-  if (fis.readInt() != 0x4F57434C) // Magic 'OWCL'
+  if (fis.readInt() != 0x4F57434C) { // Magic 'OWCL'
     return false;
+  }
 
-  if (fis.readInt() != 4) // Version 4 (Center of Mass & Category Unification)
+  int version = fis.readInt();
+  if (version != 4) { // Outdated layout version: auto-delete immediately to prevent disk bloat
     return false;
+  }
 
   if (static_cast<uint64_t>(fis.readInt64()) != hash)
     return false;
@@ -432,15 +435,35 @@ void SampleCloudComponent::saveLayoutToCache(
 
   tempFile.moveFileTo(targetFile);
 
-  // Prune LRU if > 30 cache files exist
+  // Auto-prune: actively delete any outdated cache versions and leftover .tmp files
   auto cacheDir = targetFile.getParentDirectory();
+
+  // 1. Clean orphan .tmp files
+  juce::Array<juce::File> tmpFiles;
+  cacheDir.findChildFiles(tmpFiles, juce::File::findFiles, false, "*.tmp");
+  for (const auto &tf : tmpFiles) {
+    tf.deleteFile();
+  }
+
+  // 2. Scan and purge any cache files with outdated layout versions (< 4)
   juce::Array<juce::File> files;
   cacheDir.findChildFiles(files, juce::File::findFiles, false, "cloud_layout_*.bin");
-  if (files.size() > 30) {
+  for (const auto &f : files) {
+    if (f == targetFile) continue;
+    juce::FileInputStream scanFis(f);
+    if (!scanFis.openedOk() || scanFis.readInt() != 0x4F57434C || scanFis.readInt() < 4) {
+      f.deleteFile();
+    }
+  }
+
+  // 3. Keep cache lean: LRU cap reduced to max 10 recent library layouts (~5 MB total)
+  files.clear();
+  cacheDir.findChildFiles(files, juce::File::findFiles, false, "cloud_layout_*.bin");
+  if (files.size() > 10) {
     std::sort(files.begin(), files.end(), [](const juce::File &a, const juce::File &b) {
       return a.getLastModificationTime() < b.getLastModificationTime();
     });
-    for (int i = 0; i < files.size() - 25; ++i) {
+    for (int i = 0; i < files.size() - 8; ++i) {
       files[i].deleteFile();
     }
   }
