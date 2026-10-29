@@ -262,19 +262,30 @@ bool SampleCloudComponent::loadLayoutFromCache(uint64_t hash, const std::vector<
   if (!cacheFile.existsAsFile())
     return false;
 
+  // Header validation: check magic & version, delete file immediately if outdated or corrupt
+  {
+    bool isStaleOrCorrupt = false;
+    {
+      juce::FileInputStream checkFis(cacheFile);
+      if (!checkFis.openedOk())
+        return false;
+      int magic = checkFis.readInt();
+      int version = checkFis.readInt();
+      if (magic != 0x4F57434C || version != 4)
+        isStaleOrCorrupt = true;
+    }
+    if (isStaleOrCorrupt) {
+      cacheFile.deleteFile();
+      return false;
+    }
+  }
+
   juce::FileInputStream fis(cacheFile);
   if (!fis.openedOk())
     return false;
 
-  // Header validation
-  if (fis.readInt() != 0x4F57434C) { // Magic 'OWCL'
-    return false;
-  }
-
-  int version = fis.readInt();
-  if (version != 4) { // Outdated layout version: auto-delete immediately to prevent disk bloat
-    return false;
-  }
+  fis.readInt(); // Skip magic
+  fis.readInt(); // Skip version
 
   if (static_cast<uint64_t>(fis.readInt64()) != hash)
     return false;
@@ -450,8 +461,14 @@ void SampleCloudComponent::saveLayoutToCache(
   cacheDir.findChildFiles(files, juce::File::findFiles, false, "cloud_layout_*.bin");
   for (const auto &f : files) {
     if (f == targetFile) continue;
-    juce::FileInputStream scanFis(f);
-    if (!scanFis.openedOk() || scanFis.readInt() != 0x4F57434C || scanFis.readInt() < 4) {
+    bool shouldDelete = false;
+    {
+      juce::FileInputStream scanFis(f);
+      if (!scanFis.openedOk() || scanFis.readInt() != 0x4F57434C || scanFis.readInt() < 4) {
+        shouldDelete = true;
+      }
+    }
+    if (shouldDelete) {
       f.deleteFile();
     }
   }
