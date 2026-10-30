@@ -75,6 +75,7 @@ SampleCloudComponent::CloudOverlayComponent::CloudOverlayComponent(
   addAndMakeVisible(owner.autoRotateButton);
   addAndMakeVisible(owner.hoverPlayButton);
   addAndMakeVisible(owner.sampleCountBadge);
+  addAndMakeVisible(owner.filterModeButton);
 }
 
 void SampleCloudComponent::CloudOverlayComponent::paint(juce::Graphics &g) {
@@ -89,6 +90,7 @@ void SampleCloudComponent::CloudOverlayComponent::resized() {
   owner.hoverPlayButton.setBounds(15, 15, 120, 32);
   int badgeW = owner.sampleCountBadge.getOptimalWidth();
   owner.sampleCountBadge.setBounds(owner.hoverPlayButton.getRight() + 8, 15, badgeW, 32);
+  owner.filterModeButton.setBounds(owner.sampleCountBadge.getRight() + 8, 15, 95, 32);
 
   owner.zoomInButton.setBounds(dockRight - 36, dockBottom - 145, 36, 36);
   owner.zoomOutButton.setBounds(dockRight - 36, dockBottom - 102, 36, 36);
@@ -173,6 +175,14 @@ SampleCloudComponent::SampleCloudComponent(TagDatabaseManager &db,
     hoverPlayEnabled = hoverPlayButton.getToggleState();
     hoverPlayButton.setButtonText(hoverPlayEnabled ? "Mouseover: On" : "Mouseover: Off");
     hoveredNodeIndex = -1;
+  };
+
+  filterModeButton.setButtonText(dimFilteredSamples ? "Filter: Dim" : "Filter: Hide");
+  filterModeButton.setTooltip("Toggle between dimming filtered-out samples or hiding them completely");
+  filterModeButton.onClick = [this] {
+    dimFilteredSamples = !dimFilteredSamples;
+    filterModeButton.setButtonText(dimFilteredSamples ? "Filter: Dim" : "Filter: Hide");
+    applyFilterMode();
   };
 
 #if JUCE_MAC
@@ -490,8 +500,121 @@ void SampleCloudComponent::saveLayoutToCache(
 }
 
 void SampleCloudComponent::setItems(const std::vector<MediaItem> &items) {
-  sampleCountBadge.setCount(static_cast<int>(items.size()));
+  lastReceivedItems = items;
+  applyFilterMode();
+}
+
+void SampleCloudComponent::applyFilterMode() {
+  if (lastReceivedItems.empty()) {
+    nodes.clear();
+    clusters.clear();
+    constellationEdges.clear();
+    vertexBuffer.clear();
+    lineVertexBuffer.clear();
+#if JUCE_MAC
+    if (metalView) {
+      metalView->updateVertices({});
+      metalView->updateLines({});
+    }
+#else
+    vboNeedsUpdate = true;
+#endif
+    layoutPending = false;
+    sampleCountBadge.setCount(0);
+    overlayComponent.resized();
+    overlayComponent.repaint();
+    repaint();
+    return;
+  }
+
+  size_t fullCount = universeNodes.empty() ? dbManager.getAllItems().size() : universeNodes.size();
+  bool isFiltered = (fullCount > 0 && lastReceivedItems.size() < fullCount);
+  isFilterActive = isFiltered;
+
+  if (dimFilteredSamples) {
+    if (universeNodes.empty()) {
+      if (!isFiltered) {
+        loadLayoutForItems(lastReceivedItems, true);
+        return;
+      } else {
+        auto allItems = dbManager.getAllItems();
+        loadLayoutForItems(allItems, true);
+        return;
+      }
+    } else {
+      applyDimmingMask();
+      return;
+    }
+  } else {
+    loadLayoutForItems(lastReceivedItems, false);
+    sampleCountBadge.setCount(static_cast<int>(lastReceivedItems.size()));
+    overlayComponent.resized();
+  }
+}
+
+void SampleCloudComponent::applyDimmingMask() {
+  if (universeNodes.empty())
+    return;
+
+  nodes = universeNodes;
+  clusters = universeClusters;
+  constellationEdges = universeEdges;
+
+  bool isFiltered = (lastReceivedItems.size() < universeNodes.size());
+  isFilterActive = isFiltered;
+
+  for (auto &cl : clusters)
+    cl.activeCount = 0;
+
+  if (isFiltered) {
+    std::unordered_set<juce::String> activeIds;
+    activeIds.reserve(lastReceivedItems.size());
+    for (const auto &it : lastReceivedItems)
+      activeIds.insert(it.id);
+
+    int activeMatches = 0;
+    for (auto &n : nodes) {
+      bool match = (activeIds.count(n.item.id) > 0);
+      n.isDimmed = !match;
+      if (match) {
+        activeMatches++;
+        juce::String cat = (n.canonicalCategory.isNotEmpty() && n.canonicalCategory != "other")
+                               ? n.canonicalCategory
+                               : (n.primaryTag.isNotEmpty() && n.primaryTag != "Untagged" && !TagDatabaseManager::isTechnicalOrModifierTag(n.primaryTag)
+                                      ? TagDatabaseManager::getCanonicalCategory(n.primaryTag)
+                                      : "other");
+        for (auto &cl : clusters) {
+          if (cl.tag.equalsIgnoreCase(cat)) {
+            cl.activeCount++;
+            break;
+          }
+        }
+      }
+    }
+
+    if (selectedNodeIndex >= 0 && selectedNodeIndex < static_cast<int>(nodes.size())) {
+      if (nodes[selectedNodeIndex].isDimmed)
+        selectedNodeIndex = -1;
+    }
+
+    rebuildGpuBuffers();
+    sampleCountBadge.setCount(activeMatches, static_cast<int>(universeNodes.size()));
+  } else {
+    for (auto &n : nodes)
+      n.isDimmed = false;
+    for (auto &cl : clusters)
+      cl.activeCount = cl.count;
+
+    rebuildGpuBuffers();
+    sampleCountBadge.setCount(static_cast<int>(nodes.size()));
+  }
+
   overlayComponent.resized();
+  overlayComponent.repaint();
+  repaint();
+}
+
+void SampleCloudComponent::loadLayoutForItems(const std::vector<MediaItem> &items, bool isMaster) {
   uint64_t newHash = items.size();
   for (const auto &item : items) {
     newHash ^= static_cast<uint64_t>(item.id.hashCode());
@@ -535,10 +658,22 @@ void SampleCloudComponent::setItems(const std::vector<MediaItem> &items) {
     layoutActive = false;
     revealAlpha = 0.0f;
     recentSelectionHistory.clear();
+    if (isMaster) {
+      universeNodes = nodes;
+      universeClusters = clusters;
+      universeEdges = constellationEdges;
+      universeDataHash = newHash;
+    }
     rebuildGpuBuffers();
     if (selectedNodeIndex >= 0 && selectedNodeIndex < static_cast<int>(nodes.size())) {
       updateSimilarStack();
     }
+    if (dimFilteredSamples && isMaster && lastReceivedItems.size() < universeNodes.size()) {
+      applyDimmingMask();
+      return;
+    }
+    sampleCountBadge.setCount(static_cast<int>(nodes.size()));
+    overlayComponent.resized();
     overlayComponent.repaint();
     repaint();
     return;
@@ -551,12 +686,12 @@ void SampleCloudComponent::setItems(const std::vector<MediaItem> &items) {
   overlayComponent.repaint();
   repaint();
 
-  layoutThread = std::thread([this, items = items, newHash]() mutable {
-    runLayoutAsync(std::move(items), newHash);
+  layoutThread = std::thread([this, items = items, newHash, isMaster]() mutable {
+    runLayoutAsync(std::move(items), newHash, isMaster);
   });
 }
 
-void SampleCloudComponent::runLayoutAsync(std::vector<MediaItem> items, uint64_t hash) {
+void SampleCloudComponent::runLayoutAsync(std::vector<MediaItem> items, uint64_t hash, bool isMaster) {
   std::vector<CloudNode> newNodes;
   newNodes.reserve(items.size());
 
@@ -590,7 +725,7 @@ void SampleCloudComponent::runLayoutAsync(std::vector<MediaItem> items, uint64_t
     return;
 
   juce::Component::SafePointer<SampleCloudComponent> safeThis(this);
-  juce::MessageManager::callAsync([safeThis, hash, newNodes = std::move(newNodes),
+  juce::MessageManager::callAsync([safeThis, hash, isMaster, newNodes = std::move(newNodes),
                                    newClusters = std::move(newClusters),
                                    newEdges = std::move(newEdges)]() mutable {
     if (auto *comp = safeThis.getComponent()) {
@@ -600,6 +735,12 @@ void SampleCloudComponent::runLayoutAsync(std::vector<MediaItem> items, uint64_t
       comp->nodes = std::move(newNodes);
       comp->clusters = std::move(newClusters);
       comp->constellationEdges = std::move(newEdges);
+      if (isMaster) {
+        comp->universeNodes = comp->nodes;
+        comp->universeClusters = comp->clusters;
+        comp->universeEdges = comp->constellationEdges;
+        comp->universeDataHash = hash;
+      }
       comp->recentSelectionHistory.clear();
 
       comp->rebuildGpuBuffers();
@@ -610,6 +751,12 @@ void SampleCloudComponent::runLayoutAsync(std::vector<MediaItem> items, uint64_t
       if (comp->selectedNodeIndex >= 0 && comp->selectedNodeIndex < static_cast<int>(comp->nodes.size())) {
         comp->updateSimilarStack();
       }
+      if (comp->dimFilteredSamples && isMaster && comp->lastReceivedItems.size() < comp->universeNodes.size()) {
+        comp->applyDimmingMask();
+        return;
+      }
+      comp->sampleCountBadge.setCount(static_cast<int>(comp->nodes.size()));
+      comp->overlayComponent.resized();
       comp->overlayComponent.repaint();
       comp->repaint();
     }
@@ -626,43 +773,57 @@ void SampleCloudComponent::rebuildGpuBuffers() {
 
   vertexBuffer.reserve(nodes.size());
   for (auto &n : nodes) {
+    float r = n.colour.getFloatRed();
+    float g = n.colour.getFloatGreen();
+    float b = n.colour.getFloatBlue();
+    float a = n.colour.getFloatAlpha();
+    float nodeRadius = n.radius;
+
+    if (n.isDimmed) {
+      r *= 0.16f;
+      g *= 0.16f;
+      b *= 0.16f;
+      a = 0.14f;
+      nodeRadius *= 0.75f;
+    }
+
     if (is2DMode) {
       n.currentPos = n.pos2D;
       n.targetPos = n.pos2D;
       vertexBuffer.push_back({
           n.pos2D.x, n.pos2D.y, 0.0f,
-          n.colour.getFloatRed(), n.colour.getFloatGreen(),
-          n.colour.getFloatBlue(), n.colour.getFloatAlpha(),
-          n.radius * 1.15f
+          r, g, b, a,
+          nodeRadius * 1.15f
       });
     } else {
       n.currentPos = n.pos3D;
       n.targetPos = n.pos3D;
       vertexBuffer.push_back({
           n.pos3D.x, n.pos3D.y, n.pos3D.z,
-          n.colour.getFloatRed(), n.colour.getFloatGreen(),
-          n.colour.getFloatBlue(), n.colour.getFloatAlpha(),
-          n.radius
+          r, g, b, a,
+          nodeRadius
       });
     }
   }
 
-    for (const auto &edge : constellationEdges) {
-      if (edge.first < clusters.size() && edge.second < clusters.size()) {
-        const auto &c1 = clusters[edge.first];
-        const auto &c2 = clusters[edge.second];
-        lineVertexBuffer.push_back({
-            c1.centerPos3D.x, c1.centerPos3D.y, c1.centerPos3D.z,
-            c1.colour.getFloatRed(), c1.colour.getFloatGreen(),
-            c1.colour.getFloatBlue(), 0.55f
-        });
-        lineVertexBuffer.push_back({
-            c2.centerPos3D.x, c2.centerPos3D.y, c2.centerPos3D.z,
-            c2.colour.getFloatRed(), c2.colour.getFloatGreen(),
-            c2.colour.getFloatBlue(), 0.55f
-        });
-      }
+  for (const auto &edge : constellationEdges) {
+    if (edge.first < clusters.size() && edge.second < clusters.size()) {
+      const auto &c1 = clusters[edge.first];
+      const auto &c2 = clusters[edge.second];
+      bool eitherActive = (c1.activeCount > 0 || c2.activeCount > 0 || !dimFilteredSamples || !isFilterActive);
+      float lineAlpha = eitherActive ? 0.55f : 0.08f;
+      lineVertexBuffer.push_back({
+          c1.centerPos3D.x, c1.centerPos3D.y, c1.centerPos3D.z,
+          c1.colour.getFloatRed(), c1.colour.getFloatGreen(),
+          c1.colour.getFloatBlue(), lineAlpha
+      });
+      lineVertexBuffer.push_back({
+          c2.centerPos3D.x, c2.centerPos3D.y, c2.centerPos3D.z,
+          c2.colour.getFloatRed(), c2.colour.getFloatGreen(),
+          c2.colour.getFloatBlue(), lineAlpha
+      });
     }
+  }
 
 #if JUCE_MAC
   if (metalView) {
@@ -1303,6 +1464,8 @@ void SampleCloudComponent::selectItemById(const juce::String &itemId) {
     return;
   for (size_t i = 0; i < nodes.size(); ++i) {
     if (nodes[i].item.id == itemId) {
+      if (nodes[i].isDimmed)
+        return;
       selectedNodeIndex = static_cast<int>(i);
       targetCameraCenterPos = nodes[i].targetPos;
       updateSimilarStack();
@@ -2171,7 +2334,8 @@ void SampleCloudComponent::paintOverlay(juce::Graphics &g) {
           if (labelBounds.getRight() > 0 && labelBounds.getX() < effW &&
               labelBounds.getBottom() > 0 && labelBounds.getY() < effH - 60.0f) {
             // Option A: Omnidirectional 360-degree dark halo outline for crisp contrast on bright dots
-            const juce::Colour haloColour = juce::Colour::fromRGB(8, 9, 12).withAlpha(0.92f * revealAlpha);
+            bool isCategoryActive = (cl.activeCount > 0 || !dimFilteredSamples || !isFilterActive);
+            const juce::Colour haloColour = juce::Colour::fromRGB(8, 9, 12).withAlpha((isCategoryActive ? 0.92f : 0.20f) * revealAlpha);
             g.setColour(haloColour);
             g.drawText(labelText, labelBounds.translated(-1.2f, 0.0f), juce::Justification::centred);
             g.drawText(labelText, labelBounds.translated(1.2f, 0.0f), juce::Justification::centred);
@@ -2184,7 +2348,7 @@ void SampleCloudComponent::paintOverlay(juce::Graphics &g) {
             g.drawText(labelText, labelBounds.translated(0.0f, 2.0f), juce::Justification::centred);
 
             // Clean Atlas 2 bold white title
-            g.setColour(juce::Colours::white.withAlpha(0.95f * revealAlpha));
+            g.setColour(juce::Colours::white.withAlpha((isCategoryActive ? 0.95f : 0.20f) * revealAlpha));
             g.drawText(labelText, labelBounds, juce::Justification::centred);
           }
         }
@@ -2909,7 +3073,8 @@ void SampleCloudComponent::mouseDown(const juce::MouseEvent &e) {
   isRotating = false;
 
   if (hoverPlayButton.getBounds().toFloat().expanded(3.0f).contains(e.position) ||
-      sampleCountBadge.getBounds().toFloat().expanded(3.0f).contains(e.position)) {
+      sampleCountBadge.getBounds().toFloat().expanded(3.0f).contains(e.position) ||
+      filterModeButton.getBounds().toFloat().expanded(3.0f).contains(e.position)) {
     isClickConsumedByUI = true;
     return;
   }
@@ -3259,7 +3424,8 @@ void SampleCloudComponent::mouseMove(const juce::MouseEvent &e) {
   isHoveringMainPill = false;
 
   if (hoverPlayButton.getBounds().toFloat().expanded(3.0f).contains(e.position) ||
-      sampleCountBadge.getBounds().toFloat().expanded(3.0f).contains(e.position)) {
+      sampleCountBadge.getBounds().toFloat().expanded(3.0f).contains(e.position) ||
+      filterModeButton.getBounds().toFloat().expanded(3.0f).contains(e.position)) {
     if (hoveredNodeIndex >= 0) {
       hoveredNodeIndex = -1;
       targetHoverScale = 1.0f;
@@ -3422,6 +3588,8 @@ int SampleCloudComponent::findHitNodeAt(juce::Point<float> pos) const {
   const size_t numNodes = nodes.size();
   for (size_t i = 0; i < numNodes; ++i) {
     const auto &n = nodes[i];
+    if (n.isDimmed)
+      continue;
     const float px = n.currentPos.x;
     const float py = n.currentPos.y;
     const float pz = is2DMode ? 0.0f : n.currentPos.z;

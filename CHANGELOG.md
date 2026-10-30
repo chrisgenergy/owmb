@@ -10,6 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.1.6] - 2026-10-30
 
 ### Added
+* **Interactive Map Filter Dimming Toggle (`SampleCloudComponent`)**:
+  * Added `Filter: Dim` / `Filter: Hide` toggle button on the map overlay, allowing users to choose between completely hiding filtered-out samples or keeping the entire universe visible with filtered-out samples softly dimmed.
+  * In Dim mode, the universe map maintains 100% spatial continuity without layout jumps or re-calculations: matching samples shine with full vibrancy, while non-matching samples recede into a faint, dark background tone (`a = 0.14`, `radius * 0.75`).
+  * Inactive category cluster titles and constellation lines automatically fade when containing zero matching samples.
+  * Dimmed samples are strictly isolated from user interaction (cannot be hovered, clicked, or auditioned via Mouseover).
+  * Sample Counter dynamically adapts in Dim mode to display matching vs total samples (e.g. `3,120 / 87,421 samples`).
 * **Dynamic Sample Counter Badge on Map Overlay (`SampleCloudComponent`)**:
   * Added a subtle, semi-transparent frosted badge positioned immediately to the right of the `Mouseover` button.
   * Dynamically displays the current amount of samples on the map formatted with thousand separators (e.g. `87,421 samples` in normal state, and remaining counts when search keywords, tag filters, or folder selections are active).

@@ -18,6 +18,7 @@
 #include <atomic>
 #include <vector>
 #include <set>
+#include <unordered_set>
 #include <utility>
 #include "../Models/MediaItem.h"
 #include "../Database/TagDatabaseManager.h"
@@ -67,6 +68,7 @@ public:
         juce::String primaryTag;
         juce::String canonicalCategory;
         float hoverScale { 1.0f };
+        bool isDimmed { false };
     };
 
     struct TagCluster
@@ -77,6 +79,7 @@ public:
         Vector3D centerPos2D;
         juce::Colour colour;
         int count { 0 };
+        int activeCount { 0 };
     };
 
     SampleCloudComponent(TagDatabaseManager& db, AudioEngine& engine);
@@ -138,14 +141,27 @@ private:
         {
             setInterceptsMouseClicks(true, false);
         }
-        void setCount(int count)
+        void setCount(int displayedCount, int totalCount = -1)
         {
-            currentCount = count;
-            juce::String numStr = juce::String(count);
+            currentCount = displayedCount;
+            totalUniverseCount = totalCount;
+            juce::String numStr = juce::String(displayedCount);
             for (int i = numStr.length() - 3; i > 0; i -= 3)
                 numStr = numStr.substring(0, i) + "," + numStr.substring(i);
-            displayText = numStr + (count == 1 ? " sample" : " samples");
-            setTooltip("Currently displaying " + displayText + " on the map");
+
+            if (totalCount > 0 && displayedCount < totalCount)
+            {
+                juce::String totalStr = juce::String(totalCount);
+                for (int i = totalStr.length() - 3; i > 0; i -= 3)
+                    totalStr = totalStr.substring(0, i) + "," + totalStr.substring(i);
+                displayText = numStr + " / " + totalStr + " samples";
+                setTooltip("Currently highlighting " + numStr + " of " + totalStr + " samples on the map");
+            }
+            else
+            {
+                displayText = numStr + (displayedCount == 1 ? " sample" : " samples");
+                setTooltip("Currently displaying " + displayText + " on the map");
+            }
             repaint();
         }
         int getOptimalWidth() const
@@ -167,6 +183,7 @@ private:
         }
     private:
         int currentCount { 0 };
+        int totalUniverseCount { -1 };
         juce::String displayText { "0 samples" };
     };
 
@@ -177,7 +194,7 @@ private:
     static juce::String getAtlasCategoryName(const juce::String& tag);
     static juce::String getCanonicalAtlasCategory(const MediaItem& item);
 
-    void runLayoutAsync(std::vector<MediaItem> items, uint64_t hash);
+    void runLayoutAsync(std::vector<MediaItem> items, uint64_t hash, bool isMaster = false);
     bool loadLayoutFromCache(uint64_t hash, const std::vector<MediaItem>& items);
     void saveLayoutToCache(uint64_t hash,
                            const std::vector<CloudNode>& calculatedNodes,
@@ -185,6 +202,9 @@ private:
                            const std::vector<std::pair<size_t, size_t>>& calculatedEdges);
     static juce::File getCacheFile(uint64_t hash);
     std::pair<std::vector<TagCluster>, std::vector<std::pair<size_t, size_t>>> calculateClusterLayoutInternal(std::vector<CloudNode>& nodesCopy);
+    void applyFilterMode();
+    void applyDimmingMask();
+    void loadLayoutForItems(const std::vector<MediaItem>& items, bool isMaster);
     void rebuildGpuBuffers();
     void showContextMenuForNode(int nodeIndex);
     int findHitNodeAt(juce::Point<float> pos) const;
@@ -235,6 +255,14 @@ private:
     juce::TextButton autoRotateButton { "Stop Spin" };
     juce::TextButton hoverPlayButton { "Mouseover: Off" };
     SampleCountBadge sampleCountBadge;
+    juce::TextButton filterModeButton { "Filter: Dim" };
+    bool dimFilteredSamples { true };
+    bool isFilterActive { false };
+    std::vector<CloudNode> universeNodes;
+    std::vector<TagCluster> universeClusters;
+    std::vector<std::pair<size_t, size_t>> universeEdges;
+    uint64_t universeDataHash { 0 };
+    std::vector<MediaItem> lastReceivedItems;
     bool autoRotate { true };
     bool hoverPlayEnabled { false };
 
