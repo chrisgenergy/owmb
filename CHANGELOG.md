@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.1.6] - 2026-10-30
+
+### Added
+* **Dynamic Sample Counter Badge on Map Overlay (`SampleCloudComponent`)**:
+  * Added a subtle, semi-transparent frosted badge positioned immediately to the right of the `Mouseover` button.
+  * Dynamically displays the current amount of samples on the map formatted with thousand separators (e.g. `87,421 samples` in normal state, and remaining counts when search keywords, tag filters, or folder selections are active).
+  * Includes an informative hover tooltip and transparent click handling to avoid interfering with map panning or node selection.
+
+### Fixed
+* **Cluster Outlier Elimination & Capsule Envelope Clamping Across All Categories (`SampleCloudComponent`)**:
+  * Bounded sub-tag micro-attraction magnitude proportionally to each cluster's own `baseRadius` (max 2.5% or 14px) rather than unconstrained universe-scale distance, preventing samples with secondary sub-tags from being ejected into the void.
+  * Added mathematical taper-aware capsule envelope enforcement (`allowedCross = baseRadius * sqrt(max(0.04, 1.0 - u^2 * 0.85)) * 0.68`) calibrated exactly to the 0.65 cluster body during initial node layout and after intra-cluster repulsion, smoothly tucking any boundary breaches flush into the cluster's dense outer rim. Completely eliminates stray outlier dots across all categories while fully preserving directional musical sub-tag orientation.
+* **Eliminated Selection & Audition Lag in Massive Categories (`SampleCloudComponent`)**:
+  * Optimized `updateSimilarStack()` by replacing unconstrained O(N) acoustic distance scans across tens of thousands of category samples with an ultra-fast two-stage spatial neighbor pre-filter.
+  * Replaced redundant double-looping across all nodes with instant O(1) pre-cached cluster center of mass and count lookups.
+  * Prunes candidate evaluation down to the closest 256 spatial neighbors via O(N) `std::nth_element`, cutting execution time in massive clusters like `synth` from ~200 ms down to < 1.5 ms on the UI thread for instant click and audition response.
+
+### Changed
+* **Dynamic Sample Cloud Zoom Scaling & Auto-Framing (`SampleCloudComponent`)**:
+  * Replaced static zoom boundaries with true dynamic zoom scaling computed directly from real physical map bounds (`maxX`, `maxY`, `maxZ`) and viewport aspect ratio.
+  * Dynamically computes `fitZoomScale` and adjusts `minZoomScale` down smoothly (down to `0.015f` for massive 87,000+ sample libraries), allowing users to zoom out to view the entire universe constellation on any display or library size without cutoff.
+  * Added auto-framing on initial library load and updated `Reset View` (`resetZoomAndPan`) to target `fitZoomScale` instead of hardcoded 1.0x, ensuring newly loaded libraries immediately appear properly centered and framed.
+* **Sample Cloud Binary Layout Cache Version Bump (Version 17)**:
+  * Incremented layout binary cache format version from `14` to `17` in `SampleCloudComponent` to automatically purge stale layouts and regenerate pristine, cohesive cluster silhouettes across all categories.
+
+---
+
 ## [1.1.5] - 2026-10-30
 
 ### Added
@@ -36,8 +63,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - *Library Index Sanitization*: Purged accidental `#Synth` and `#MelodicLoop` tags from all 108 files in `MIDI Clips\Drums`, and cleared false `#DrumLoop` tags from affected instrument presets in `library_index.json`.
 
 ### Changed
-* **Expanded Maximum Zoom-Out Range (`SampleCloudComponent`)**:
-  * Decreased the minimum zoom scale limit from `0.20f` (20%) down to `0.10f` (10%) via `minZoomScale`, allowing users to zoom out further with both the mouse wheel and the `-` HUD button to comfortably view the entire universe constellation on any display size.
 * **Sample Cloud Binary Layout Cache Version Bump (Version 14)**:
   * Incremented binary cache format version from `13` to `14` in `SampleCloudComponent` to automatically purge stale layouts and regenerate pristine spatial coordinates where all drum beat loops sit properly clustered in `loop`.
 

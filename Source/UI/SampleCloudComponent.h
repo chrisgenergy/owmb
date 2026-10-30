@@ -131,6 +131,45 @@ private:
         SampleCloudComponent& owner;
     };
 
+    class SampleCountBadge : public juce::Component, public juce::SettableTooltipClient
+    {
+    public:
+        SampleCountBadge()
+        {
+            setInterceptsMouseClicks(true, false);
+        }
+        void setCount(int count)
+        {
+            currentCount = count;
+            juce::String numStr = juce::String(count);
+            for (int i = numStr.length() - 3; i > 0; i -= 3)
+                numStr = numStr.substring(0, i) + "," + numStr.substring(i);
+            displayText = numStr + (count == 1 ? " sample" : " samples");
+            setTooltip("Currently displaying " + displayText + " on the map");
+            repaint();
+        }
+        int getOptimalWidth() const
+        {
+            juce::Font font(12.0f);
+            return std::max(80, font.getStringWidth(displayText) + 24);
+        }
+        void paint(juce::Graphics& g) override
+        {
+            auto bounds = getLocalBounds().toFloat().reduced(0.5f);
+            g.setColour(juce::Colour::fromRGB(24, 26, 32).withAlpha(0.78f));
+            g.fillRoundedRectangle(bounds, 5.0f);
+            g.setColour(juce::Colour::fromRGB(55, 60, 72).withAlpha(0.50f));
+            g.drawRoundedRectangle(bounds, 5.0f, 1.0f);
+
+            g.setColour(juce::Colours::white.withAlpha(0.68f));
+            g.setFont(juce::Font(12.0f));
+            g.drawText(displayText, getLocalBounds(), juce::Justification::centred, false);
+        }
+    private:
+        int currentCount { 0 };
+        juce::String displayText { "0 samples" };
+    };
+
     void timerCallback() override;
     void resetZoomAndPan();
     juce::Colour getColourForTag(const juce::String& tag) const;
@@ -167,11 +206,16 @@ private:
     float rotY { 0.45f };
     float targetRotX { 0.35f };
     float targetRotY { 0.45f };
-    static constexpr float minZoomScale { 0.10f };
+    float minZoomScale { 0.10f };
     static constexpr float maxZoomScale { 3.5f };
     float cameraDistance { 850.0f };
     float zoomScale { 1.0f };
     float targetZoomScale { 1.0f };
+    float fitZoomScale { 1.0f };
+    float rawMaxX { 600.0f };
+    float rawMaxY { 500.0f };
+    float rawMaxZ { 400.0f };
+    bool hasFittedInitialView { false };
     Vector3D cameraCenterPos { 0.0f, 0.0f, 0.0f };
     Vector3D targetCameraCenterPos { 0.0f, 0.0f, 0.0f };
     Vector3D cameraVelocity { 0.0f, 0.0f, 0.0f };
@@ -190,6 +234,7 @@ private:
     juce::TextButton viewModeButton  { "2D" };
     juce::TextButton autoRotateButton { "Stop Spin" };
     juce::TextButton hoverPlayButton { "Mouseover: Off" };
+    SampleCountBadge sampleCountBadge;
     bool autoRotate { true };
     bool hoverPlayEnabled { false };
 
@@ -275,6 +320,7 @@ private:
     float maxMapPanZ { 500.0f };
     uint32_t lastDockToggleTime { 0 };
     void updateMapBounds();
+    void updateDynamicZoomLimits();
 
     std::vector<int> recentSelectionHistory;
 

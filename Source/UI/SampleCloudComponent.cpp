@@ -74,6 +74,7 @@ SampleCloudComponent::CloudOverlayComponent::CloudOverlayComponent(
   addAndMakeVisible(owner.viewModeButton);
   addAndMakeVisible(owner.autoRotateButton);
   addAndMakeVisible(owner.hoverPlayButton);
+  addAndMakeVisible(owner.sampleCountBadge);
 }
 
 void SampleCloudComponent::CloudOverlayComponent::paint(juce::Graphics &g) {
@@ -86,6 +87,8 @@ void SampleCloudComponent::CloudOverlayComponent::resized() {
   int dockBottom = b.getBottom() - 15;
 
   owner.hoverPlayButton.setBounds(15, 15, 120, 32);
+  int badgeW = owner.sampleCountBadge.getOptimalWidth();
+  owner.sampleCountBadge.setBounds(owner.hoverPlayButton.getRight() + 8, 15, badgeW, 32);
 
   owner.zoomInButton.setBounds(dockRight - 36, dockBottom - 145, 36, 36);
   owner.zoomOutButton.setBounds(dockRight - 36, dockBottom - 102, 36, 36);
@@ -271,7 +274,7 @@ bool SampleCloudComponent::loadLayoutFromCache(uint64_t hash, const std::vector<
         return false;
       int magic = checkFis.readInt();
       int version = checkFis.readInt();
-      if (magic != 0x4F57434C || version != 14)
+      if (magic != 0x4F57434C || version != 17)
         isStaleOrCorrupt = true;
     }
     if (isStaleOrCorrupt) {
@@ -405,7 +408,7 @@ void SampleCloudComponent::saveLayoutToCache(
       return;
 
     fos->writeInt(0x4F57434C); // Magic 'OWCL'
-    fos->writeInt(14);         // Version 14 (Fix Misplaced Drum Loops & Beat Routing Across All Categories)
+    fos->writeInt(17);         // Version 17 (Calibrated 0.68x Capsule Clamping & Outlier Void Elimination Across All Categories)
     fos->writeInt64(static_cast<juce::int64>(hash));
     fos->writeInt(static_cast<int>(calculatedNodes.size()));
     fos->writeInt(static_cast<int>(calculatedClusters.size()));
@@ -487,6 +490,8 @@ void SampleCloudComponent::saveLayoutToCache(
 }
 
 void SampleCloudComponent::setItems(const std::vector<MediaItem> &items) {
+  sampleCountBadge.setCount(static_cast<int>(items.size()));
+  overlayComponent.resized();
   uint64_t newHash = items.size();
   for (const auto &item : items) {
     newHash ^= static_cast<uint64_t>(item.id.hashCode());
@@ -498,6 +503,7 @@ void SampleCloudComponent::setItems(const std::vector<MediaItem> &items) {
   if (newHash == currentDataHash && !nodes.empty())
     return;
   currentDataHash = newHash;
+  hasFittedInitialView = false;
 
   layoutActive = false;
   if (layoutThread.joinable())
@@ -995,14 +1001,14 @@ SampleCloudComponent::calculateClusterLayoutInternal(
 
       // Elliptical boundary constraint: cluster organically tapers towards the poles
       float max_cross = std::sqrt(std::max(0.04f, 1.0f - rank_u * rank_u * 0.85f));
-      float cross_scaled = cross_u * max_cross;
 
       // Secondary acoustic feature: decay ratio (punchy/short vs sustained/long)
       float decay_u = 0.0f;
       if (node.item.decayRatio > 0.001) {
         decay_u = std::tanh((static_cast<float>(node.item.decayRatio) - 0.25f) * 2.2f) * 0.65f;
       }
-      float final_cross = cross_scaled * 0.65f + decay_u * 0.35f * max_cross;
+      float combined_cross = juce::jlimit(-1.0f, 1.0f, cross_u * 0.75f + decay_u * 0.25f);
+      float final_cross = combined_cross * max_cross * 0.65f;
 
       // Subtle high-entropy hash jitter to prevent rigid grid lines while keeping organic aesthetic
       uint32_t nodeHash = static_cast<uint32_t>(node.item.filePath.hashCode() ^ (rank_i * 2654435761u));
@@ -1014,8 +1020,6 @@ SampleCloudComponent::calculateClusterLayoutInternal(
       float posX_rel = (rank_u * axisStretch * cosA - final_cross * sinA) * baseRadius + jX;
       float posY_rel = (rank_u * axisStretch * sinA + final_cross * cosA) * baseRadius + jY;
 
-      node.pos2D = { cPos2D.x + posX_rel, cPos2D.y + posY_rel, 0.0f };
-
       // 3D position with dynamic punch (Crest Factor) on Z-depth
       float dynamicZ = 0.0f;
       if (node.item.crestFactor > 0.1) {
@@ -1023,9 +1027,8 @@ SampleCloudComponent::calculateClusterLayoutInternal(
       }
       float zSeq = std::fmod(static_cast<float>(rank_i) * 0.3247179572f, 1.0f) * 2.0f - 1.0f;
       float posZ_rel = dynamicZ + zSeq * (baseRadius * 0.25f);
-      node.pos3D = { cPos3D.x + posX_rel, cPos3D.y + posY_rel, cPos3D.z + posZ_rel };
 
-      // Semantic Sub-Tag Micro-Attraction: subtle 6% gravitational pull toward neighbor categories
+      // Semantic Sub-Tag Micro-Attraction: directional drift toward neighbor categories
       Vector3D subTagPull2D { 0.0f, 0.0f, 0.0f };
       Vector3D subTagPull3D { 0.0f, 0.0f, 0.0f };
       int pullMatches = 0;
@@ -1041,8 +1044,21 @@ SampleCloudComponent::calculateClusterLayoutInternal(
           if (it2D != tagCenters2D.end() && it3D != tagCenters3D.end()) {
             auto dir2D = it2D->second - cPos2D;
             auto dir3D = it3D->second - cPos3D;
-            subTagPull2D = subTagPull2D + dir2D * 0.06f;
-            subTagPull3D = subTagPull3D + dir3D * 0.06f;
+
+            float dist2D = std::sqrt(dir2D.x * dir2D.x + dir2D.y * dir2D.y);
+            float dist3D = std::sqrt(dir3D.x * dir3D.x + dir3D.y * dir3D.y + dir3D.z * dir3D.z);
+
+            // Bounded displacement: scaled relative to the cluster's baseRadius (max 2.5% of radius, max 14px)
+            // allows subtle within-cluster directional alignment without detaching from the cluster body
+            if (dist2D > 1.0f) {
+              float maxPullDist2D = std::min(baseRadius * 0.025f, 14.0f);
+              subTagPull2D = subTagPull2D + (dir2D / dist2D) * maxPullDist2D;
+            }
+            if (dist3D > 1.0f) {
+              float maxPullDist3D = std::min(baseRadius * 0.025f, 14.0f);
+              subTagPull3D = subTagPull3D + (dir3D / dist3D) * maxPullDist3D;
+            }
+
             pullMatches++;
             if (pullMatches >= 2) break;
           }
@@ -1051,12 +1067,31 @@ SampleCloudComponent::calculateClusterLayoutInternal(
 
       if (pullMatches > 0) {
         float scalePull = 1.0f / static_cast<float>(pullMatches);
-        node.pos2D.x += subTagPull2D.x * scalePull;
-        node.pos2D.y += subTagPull2D.y * scalePull;
-        node.pos3D.x += subTagPull3D.x * scalePull;
-        node.pos3D.y += subTagPull3D.y * scalePull;
-        node.pos3D.z += subTagPull3D.z * scalePull;
+        posX_rel += subTagPull2D.x * scalePull;
+        posY_rel += subTagPull2D.y * scalePull;
+        posZ_rel += subTagPull3D.z * scalePull;
       }
+
+      // Taper-aware capsule envelope clamp: guarantees sample stays embedded inside the cluster body
+      float x_axis = posX_rel * cosA + posY_rel * sinA;
+      float y_cross = -posX_rel * sinA + posY_rel * cosA;
+      float maxA = baseRadius * axisStretch;
+      float normU = juce::jlimit(-1.0f, 1.0f, x_axis / maxA);
+      float localTaper = std::sqrt(std::max(0.04f, 1.0f - normU * normU * 0.85f));
+      float allowedCross = baseRadius * localTaper * 0.68f;
+
+      if (std::abs(x_axis) > maxA) {
+        x_axis = (x_axis > 0.0f) ? maxA : -maxA;
+      }
+      if (std::abs(y_cross) > allowedCross) {
+        y_cross = (y_cross > 0.0f) ? allowedCross : -allowedCross;
+      }
+
+      posX_rel = x_axis * cosA - y_cross * sinA;
+      posY_rel = x_axis * sinA + y_cross * cosA;
+
+      node.pos2D = { cPos2D.x + posX_rel, cPos2D.y + posY_rel, 0.0f };
+      node.pos3D = { cPos3D.x + posX_rel, cPos3D.y + posY_rel, cPos3D.z + posZ_rel };
     }
   }
 
@@ -1157,6 +1192,56 @@ SampleCloudComponent::calculateClusterLayoutInternal(
     }
   }
 
+  // Post-repulsion capsule envelope enforcement: guarantees zero stray outliers across all categories
+  for (const auto &pair : clusterNodeIndices) {
+    const auto &catKey = pair.first;
+    const auto &indices = pair.second;
+    size_t count = indices.size();
+    if (count <= 1) continue;
+
+    auto cPos2D = tagCenters2D[catKey];
+    auto cPos3D = tagCenters3D[catKey];
+    auto anc = findAnchor(catKey);
+    float axisAngle = anc.angle;
+    float axisStretch = (anc.stretch > 0.01f) ? anc.stretch : 1.6f;
+    float baseRadius = std::max(40.0f, 35.0f + std::sqrt(static_cast<float>(count)) * 14.5f);
+
+    float cosA = std::cos(axisAngle);
+    float sinA = std::sin(axisAngle);
+    float maxA = baseRadius * axisStretch;
+    float invMaxA = 1.0f / maxA;
+
+    for (size_t idx : indices) {
+      float relX = nodesCopy[idx].pos2D.x - cPos2D.x;
+      float relY = nodesCopy[idx].pos2D.y - cPos2D.y;
+
+      float x_axis = relX * cosA + relY * sinA;
+      float y_cross = -relX * sinA + relY * cosA;
+
+      float normU = juce::jlimit(-1.0f, 1.0f, x_axis * invMaxA);
+      float localTaper = std::sqrt(std::max(0.04f, 1.0f - normU * normU * 0.85f));
+      float allowedCross = baseRadius * localTaper * 0.68f;
+
+      bool clamped = false;
+      if (std::abs(x_axis) > maxA) {
+        x_axis = (x_axis > 0.0f) ? maxA : -maxA;
+        clamped = true;
+      }
+      if (std::abs(y_cross) > allowedCross) {
+        y_cross = (y_cross > 0.0f) ? allowedCross : -allowedCross;
+        clamped = true;
+      }
+
+      if (clamped) {
+        nodesCopy[idx].pos2D.x = cPos2D.x + (x_axis * cosA - y_cross * sinA);
+        nodesCopy[idx].pos2D.y = cPos2D.y + (x_axis * sinA + y_cross * cosA);
+
+        nodesCopy[idx].pos3D.x = cPos3D.x + (x_axis * cosA - y_cross * sinA);
+        nodesCopy[idx].pos3D.y = cPos3D.y + (x_axis * sinA + y_cross * cosA);
+      }
+    }
+  }
+
   for (auto &node : nodesCopy) {
     if (!layoutActive.load()) return {outClusters, {}};
     node.targetPos = is2DMode ? node.pos2D : node.pos3D;
@@ -1253,41 +1338,21 @@ void SampleCloudComponent::updateSimilarStack() {
                                   : getCanonicalAtlasCategory(refItem).toLowerCase();
 
   // 2. Determine Category Cluster Core vs. Edge Position using pre-cached category
-  Vector3D catCenter { 0.0f, 0.0f, 0.0f };
-  int sameCatCount = 0;
-  for (const auto &n : nodes) {
-    if (TagDatabaseManager::areCategoriesCompatible(n.canonicalCategory, refCat)) {
-      catCenter.x += n.targetPos.x;
-      catCenter.y += n.targetPos.y;
-      catCenter.z += n.targetPos.z;
-      sameCatCount++;
+  Vector3D catCenter = refNode.targetPos;
+  int sameCatCount = 1;
+  for (const auto &cl : clusters) {
+    if (TagDatabaseManager::areCategoriesCompatible(cl.tag, refCat)) {
+      catCenter = is2DMode ? cl.centerPos2D : cl.centerPos3D;
+      sameCatCount = cl.count;
+      break;
     }
   }
 
-  float maxDistFromCenter = 1.0f;
-  float refDistFromCenter = 0.0f;
-
-  if (sameCatCount > 0) {
-    catCenter.x /= static_cast<float>(sameCatCount);
-    catCenter.y /= static_cast<float>(sameCatCount);
-    catCenter.z /= static_cast<float>(sameCatCount);
-
-    float dx = refNode.targetPos.x - catCenter.x;
-    float dy = refNode.targetPos.y - catCenter.y;
-    float dz = is2DMode ? 0.0f : (refNode.targetPos.z - catCenter.z);
-    refDistFromCenter = std::sqrt(dx * dx + dy * dy + dz * dz);
-
-    for (const auto &n : nodes) {
-      if (TagDatabaseManager::areCategoriesCompatible(n.canonicalCategory, refCat)) {
-        float ndx = n.targetPos.x - catCenter.x;
-        float ndy = n.targetPos.y - catCenter.y;
-        float ndz = is2DMode ? 0.0f : (n.targetPos.z - catCenter.z);
-        float d = std::sqrt(ndx * ndx + ndy * ndy + ndz * ndz);
-        maxDistFromCenter = std::max(maxDistFromCenter, d);
-      }
-    }
-  }
-
+  float dx = refNode.targetPos.x - catCenter.x;
+  float dy = refNode.targetPos.y - catCenter.y;
+  float dz = is2DMode ? 0.0f : (refNode.targetPos.z - catCenter.z);
+  float refDistFromCenter = std::sqrt(dx * dx + dy * dy + dz * dz);
+  float maxDistFromCenter = std::max(120.0f, std::sqrt(static_cast<float>(sameCatCount)) * 26.0f);
   const float normalizedRadius = (maxDistFromCenter > 1.0f) ? (refDistFromCenter / maxDistFromCenter) : 0.0f;
   const bool isEdgeSample = (normalizedRadius >= 0.68f);
 
@@ -1306,28 +1371,51 @@ void SampleCloudComponent::updateSimilarStack() {
 
   const float maxNeighborDistSq = (maxDistFromCenter * 1.6f) * (maxDistFromCenter * 1.6f);
 
-  for (size_t i = 0; i < nodes.size(); ++i) {
+  struct SpatialCandidate {
+    int nodeIndex;
+    float distSq;
+    bool isSameCategory;
+  };
+
+  std::vector<SpatialCandidate> spatialPool;
+  spatialPool.reserve(512);
+
+  const size_t numNodes = nodes.size();
+  for (size_t i = 0; i < numNodes; ++i) {
     if (static_cast<int>(i) == selectedNodeIndex)
       continue;
 
     const auto &candNode = nodes[i];
     const bool isSameCat = TagDatabaseManager::areCategoriesCompatible(candNode.canonicalCategory, refCat);
 
+    float spDx = candNode.targetPos.x - refNode.targetPos.x;
+    float spDy = candNode.targetPos.y - refNode.targetPos.y;
+    float spDz = is2DMode ? 0.0f : (candNode.targetPos.z - refNode.targetPos.z);
+    float spatialDistSq = spDx * spDx + spDy * spDy + spDz * spDz;
+
     if (!isSameCat) {
-      if (!isEdgeSample && sameCatCount >= 6) {
+      if (!isEdgeSample && sameCatCount >= 6)
         continue;
-      }
 
-      float spDx = candNode.targetPos.x - refNode.targetPos.x;
-      float spDy = candNode.targetPos.y - refNode.targetPos.y;
-      float spDz = is2DMode ? 0.0f : (candNode.targetPos.z - refNode.targetPos.z);
-      float spatialDistSq = spDx * spDx + spDy * spDy + spDz * spDz;
-
-      if (sameCatCount >= 6 && spatialDistSq > maxNeighborDistSq) {
+      if (sameCatCount >= 6 && spatialDistSq > maxNeighborDistSq)
         continue;
-      }
     }
 
+    spatialPool.push_back({ static_cast<int>(i), spatialDistSq, isSameCat });
+  }
+
+  // Prune candidate pool to closest 256 spatial neighbors
+  constexpr size_t maxCandidates = 256;
+  if (spatialPool.size() > maxCandidates) {
+    std::nth_element(spatialPool.begin(), spatialPool.begin() + maxCandidates, spatialPool.end(),
+                     [](const SpatialCandidate &a, const SpatialCandidate &b) {
+                       return a.distSq < b.distSq;
+                     });
+    spatialPool.resize(maxCandidates);
+  }
+
+  for (const auto &sc : spatialPool) {
+    const auto &candNode = nodes[sc.nodeIndex];
     const auto &candItem = candNode.item;
     double acousticDist = TagDatabaseManager::calculateAcousticDistance(refItem, candItem);
 
@@ -1335,7 +1423,7 @@ void SampleCloudComponent::updateSimilarStack() {
     if (recentSelectionHistory.size() > 1) {
       int histLen = static_cast<int>(recentSelectionHistory.size());
       for (int h = histLen - 2; h >= 0; --h) {
-        if (recentSelectionHistory[h] == static_cast<int>(i)) {
+        if (recentSelectionHistory[h] == sc.nodeIndex) {
           int stepsAgo = (histLen - 1) - h;
           if (stepsAgo == 1)       recencyPenalty = 1.25;
           else if (stepsAgo == 2)  recencyPenalty = 0.85;
@@ -1348,7 +1436,7 @@ void SampleCloudComponent::updateSimilarStack() {
       }
     }
 
-    double effectiveDist = acousticDist + recencyPenalty + (isSameCat ? 0.0 : 0.35);
+    double effectiveDist = acousticDist + recencyPenalty + (sc.isSameCategory ? 0.0 : 0.35);
 
     double spectralDiff = (candItem.highFreqRatio - refItem.highFreqRatio) * 2.4
                         + (candItem.zcr - refItem.zcr) * 1.8
@@ -1364,9 +1452,9 @@ void SampleCloudComponent::updateSimilarStack() {
     }
 
     if (totalDiff >= 0.0) {
-      aboveCandidates.push_back({ static_cast<int>(i), acousticDist, effectiveDist, totalDiff, isSameCat });
+      aboveCandidates.push_back({ sc.nodeIndex, acousticDist, effectiveDist, totalDiff, sc.isSameCategory });
     } else {
-      belowCandidates.push_back({ static_cast<int>(i), acousticDist, effectiveDist, -totalDiff, isSameCat });
+      belowCandidates.push_back({ sc.nodeIndex, acousticDist, effectiveDist, -totalDiff, sc.isSameCategory });
     }
   }
 
@@ -1646,6 +1734,48 @@ void SampleCloudComponent::updateMapBounds() {
   maxMapPanX = maxX + 280.0f;
   maxMapPanY = maxY + 240.0f;
   maxMapPanZ = maxZ + 240.0f;
+  rawMaxX = maxX;
+  rawMaxY = maxY;
+  rawMaxZ = maxZ;
+
+  updateDynamicZoomLimits();
+
+  if (!hasFittedInitialView && !nodes.empty()) {
+    targetZoomScale = fitZoomScale;
+    zoomScale = fitZoomScale;
+    hasFittedInitialView = true;
+  }
+}
+
+void SampleCloudComponent::updateDynamicZoomLimits() {
+  float effW = getEffectiveWidth();
+  float effH = getEffectiveHeight();
+  if (effW <= 10.0f || effH <= 10.0f) {
+    effW = 1200.0f;
+    effH = 750.0f;
+  }
+  float aspect = effW / effH;
+  const float margin = 1.18f;
+
+  float targetSpanX = rawMaxX * margin;
+  float targetSpanY = rawMaxY * margin;
+  if (!is2DMode) {
+    float r3D = std::sqrt(rawMaxX * rawMaxX + rawMaxY * rawMaxY + rawMaxZ * rawMaxZ) * 0.82f;
+    targetSpanX = std::max(targetSpanX, r3D * margin);
+    targetSpanY = std::max(targetSpanY, r3D * margin);
+  }
+
+  // Camera frustum: top/near = 0.1/0.2 = 0.5. At distance D = cameraDistance / zoom,
+  // half-height visible is 0.5 * D, and half-width visible is 0.5 * aspect * D.
+  float reqZoomX = (0.5f * cameraDistance * aspect) / std::max(10.0f, targetSpanX);
+  float reqZoomY = (0.5f * cameraDistance) / std::max(10.0f, targetSpanY);
+  float calculatedFitZoom = std::min(reqZoomX, reqZoomY);
+
+  fitZoomScale = juce::jlimit(0.015f, 1.0f, calculatedFitZoom);
+  minZoomScale = juce::jlimit(0.010f, 0.20f, fitZoomScale * 0.70f);
+
+  targetZoomScale = juce::jlimit(minZoomScale, maxZoomScale, targetZoomScale);
+  zoomScale = juce::jlimit(minZoomScale, maxZoomScale, zoomScale);
 }
 
 juce::Rectangle<float> SampleCloudComponent::getDockDeadzone() const {
@@ -2661,8 +2791,8 @@ void SampleCloudComponent::timerCallback() {
 
 void SampleCloudComponent::resetZoomAndPan() {
   selectedNodeIndex = -1;
-  targetZoomScale = 1.0f;
-  zoomScale = 1.0f;
+  targetZoomScale = fitZoomScale;
+  zoomScale = fitZoomScale;
   targetCameraCenterPos = {0.0f, 0.0f, 0.0f};
   cameraCenterPos = {0.0f, 0.0f, 0.0f};
   cameraVelocity = {0.0f, 0.0f, 0.0f};
@@ -2753,6 +2883,7 @@ void SampleCloudComponent::refreshView() {
 }
 
 void SampleCloudComponent::resized() {
+  updateDynamicZoomLimits();
   auto b = getLocalBounds();
 #if JUCE_MAC
   if (metalContainer)
@@ -2777,7 +2908,8 @@ void SampleCloudComponent::mouseDown(const juce::MouseEvent &e) {
   isPanning = false;
   isRotating = false;
 
-  if (hoverPlayButton.getBounds().toFloat().expanded(3.0f).contains(e.position)) {
+  if (hoverPlayButton.getBounds().toFloat().expanded(3.0f).contains(e.position) ||
+      sampleCountBadge.getBounds().toFloat().expanded(3.0f).contains(e.position)) {
     isClickConsumedByUI = true;
     return;
   }
@@ -3126,7 +3258,8 @@ void SampleCloudComponent::mouseMove(const juce::MouseEvent &e) {
   isHoveringFavoriteStar = false;
   isHoveringMainPill = false;
 
-  if (hoverPlayButton.getBounds().toFloat().expanded(3.0f).contains(e.position)) {
+  if (hoverPlayButton.getBounds().toFloat().expanded(3.0f).contains(e.position) ||
+      sampleCountBadge.getBounds().toFloat().expanded(3.0f).contains(e.position)) {
     if (hoveredNodeIndex >= 0) {
       hoveredNodeIndex = -1;
       targetHoverScale = 1.0f;
