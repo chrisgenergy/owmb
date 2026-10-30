@@ -25,6 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - *Library Index Sanitization*: Purged accidental `#Synth` and `#MelodicLoop` tags from all 108 files in `MIDI Clips\Drums`, and cleared false `#DrumLoop` tags from affected instrument presets in `library_index.json`.
 
 ### Changed
+* **Expanded Maximum Zoom-Out Range (`SampleCloudComponent`)**:
+  * Decreased the minimum zoom scale limit from `0.20f` (20%) down to `0.10f` (10%) via `minZoomScale`, allowing users to zoom out further with both the mouse wheel and the `-` HUD button to comfortably view the entire universe constellation on any display size.
 * **Sample Cloud Binary Layout Cache Version Bump (Version 14)**:
   * Incremented binary cache format version from `13` to `14` in `SampleCloudComponent` to automatically purge stale layouts and regenerate pristine spatial coordinates where all drum beat loops sit properly clustered in `loop`.
 

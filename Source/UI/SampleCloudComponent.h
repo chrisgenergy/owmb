@@ -167,6 +167,8 @@ private:
     float rotY { 0.45f };
     float targetRotX { 0.35f };
     float targetRotY { 0.45f };
+    static constexpr float minZoomScale { 0.10f };
+    static constexpr float maxZoomScale { 3.5f };
     float cameraDistance { 850.0f };
     float zoomScale { 1.0f };
     float targetZoomScale { 1.0f };

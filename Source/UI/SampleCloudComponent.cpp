@@ -128,10 +128,10 @@ SampleCloudComponent::SampleCloudComponent(TagDatabaseManager &db,
                                            AudioEngine &engine)
     : dbManager(db), audioEngine(engine), overlayComponent(*this) {
   zoomInButton.onClick = [this] {
-    targetZoomScale = juce::jlimit(0.20f, 3.5f, targetZoomScale * 1.25f);
+    targetZoomScale = juce::jlimit(minZoomScale, maxZoomScale, targetZoomScale * 1.25f);
   };
   zoomOutButton.onClick = [this] {
-    targetZoomScale = juce::jlimit(0.20f, 3.5f, targetZoomScale * 0.8f);
+    targetZoomScale = juce::jlimit(minZoomScale, maxZoomScale, targetZoomScale * 0.8f);
   };
   resetZoomButton.onClick = [this] { resetZoomAndPan(); };
 
@@ -1684,7 +1684,7 @@ void SampleCloudComponent::flyToCluster(int clusterIdx) {
     return;
   targetCameraCenterPos = is2DMode ? clusters[clusterIdx].centerPos2D : clusters[clusterIdx].centerPos3D;
   if (is2DMode) targetCameraCenterPos.z = 0.0f;
-  targetZoomScale = juce::jlimit(0.20f, 3.5f, 1.40f);
+  targetZoomScale = juce::jlimit(minZoomScale, maxZoomScale, 1.40f);
   selectedNodeIndex = -1;
   overlayComponent.repaint();
 }
@@ -2543,8 +2543,8 @@ void SampleCloudComponent::timerCallback() {
     zoomScale += (targetZoomScale - zoomScale) * 0.18f;
     needsRepaint = true;
   }
-  targetZoomScale = juce::jlimit(0.20f, 3.5f, targetZoomScale);
-  zoomScale = juce::jlimit(0.20f, 3.5f, zoomScale);
+  targetZoomScale = juce::jlimit(minZoomScale, maxZoomScale, targetZoomScale);
+  zoomScale = juce::jlimit(minZoomScale, maxZoomScale, zoomScale);
 
   targetCameraCenterPos.x = juce::jlimit(-maxMapPanX, maxMapPanX, targetCameraCenterPos.x);
   targetCameraCenterPos.y = juce::jlimit(-maxMapPanY, maxMapPanY, targetCameraCenterPos.y);
@@ -3416,7 +3416,7 @@ void SampleCloudComponent::mouseWheelMove(
       // 3. If there is also significant vertical movement, zoom simultaneously
       if (std::abs(wheel.deltaY) > std::abs(wheel.deltaX) * 0.6f) {
         targetZoomScale = juce::jlimit(
-            0.20f, 3.5f, targetZoomScale * std::pow(1.15f, wheel.deltaY * 3.0f));
+            minZoomScale, maxZoomScale, targetZoomScale * std::pow(1.15f, wheel.deltaY * 3.0f));
       }
 
       overlayComponent.repaint();
@@ -3426,7 +3426,7 @@ void SampleCloudComponent::mouseWheelMove(
 #endif
 
     targetZoomScale = juce::jlimit(
-        0.20f, 3.5f, targetZoomScale * std::pow(1.15f, wheel.deltaY * 3.0f));
+        minZoomScale, maxZoomScale, targetZoomScale * std::pow(1.15f, wheel.deltaY * 3.0f));
     overlayComponent.repaint();
     repaint();
   }
