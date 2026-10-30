@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.1.5] - 2026-10-30
+
+### Added
+* **Quick Search Field Reset (`HeaderBarComponent`)**:
+  * Embedded interactive `✕` Clear Button directly inside the header search bar (`searchEditor`).
+  * Dynamically appears only when search text is present and stays hidden when empty.
+  * Added `Escape` key shortcut inside the search field to instantly clear queries, refresh search results, and reset focus.
+  * Added right-side border margin (`BorderSize<int>(1, 6, 1, 26)`) ensuring typed text never collides with the clear button.
+
+---
+
 ## [1.1.4] - 2026-10-30
 
 ### Fixed
