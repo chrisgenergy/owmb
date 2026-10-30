@@ -326,6 +326,12 @@ bool HeaderBarComponent::keyPressed(const juce::KeyPress& key, juce::Component* 
             listeners.call([](HeaderBarListener& l) { l.searchBarDownPressed(); });
             return true;
         }
+        else if (key == juce::KeyPress::returnKey)
+        {
+            listeners.call([](HeaderBarListener& l) { l.searchBarReturnPressed(); });
+            return true;
+            return true;
+        }
     }
     return false;
 }

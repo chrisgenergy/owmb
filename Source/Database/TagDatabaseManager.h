@@ -102,6 +102,8 @@ public:
     void setPrimaryColourHex(const juce::String& hex);
     float getUiScale() const;
     void setUiScale(float scale);
+    bool isCloud2DMode() const;
+    void setCloud2DMode(bool is2D);
 
 private:
     void timerCallback() override;
@@ -115,6 +117,7 @@ private:
     bool darkThemeActive = true;
     juce::String primaryColourHex;
     float uiScale = 1.0f;
+    bool cloud2DModeActive = false;
     juce::ListenerList<TagDatabaseListener> listeners;
 };
 

@@ -55,6 +55,7 @@ public:
     void viewModeChanged(ViewMode mode) override;
     void searchBarUpPressed() override;
     void searchBarDownPressed() override;
+    void searchBarReturnPressed() override;
 
     // TagPanelListener Callbacks
     void tagFilterSelectionChanged(const std::set<juce::String>& selectedTags, bool matchAllTags, bool favoritesOnly) override;
@@ -67,6 +68,7 @@ public:
     void addToSampleMapRequested(const MediaItem& item) override;
     void autoSliceToSamplerRequested(const MediaItem& item) override;
     void editSampleRequested(const MediaItem& item) override;
+    void locateOnMapRequested(const MediaItem& item) override;
 
     // SampleCloudListener Callbacks
     void cloudSampleSelected(const MediaItem& item) override;

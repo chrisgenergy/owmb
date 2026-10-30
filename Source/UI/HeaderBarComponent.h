@@ -36,6 +36,7 @@ public:
     virtual void viewModeChanged(ViewMode mode) = 0;
     virtual void searchBarUpPressed() {}
     virtual void searchBarDownPressed() {}
+    virtual void searchBarReturnPressed() {}
 };
 
 class HeaderBarComponent : public juce::Component,

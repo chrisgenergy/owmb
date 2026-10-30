@@ -87,6 +87,7 @@ public:
 
     void setItems(const std::vector<MediaItem>& items);
     void selectItemById(const juce::String& itemId);
+    void locateAndFocusItem(const juce::String& itemId, bool triggerAudition = false);
     void refreshView();
     float getEffectiveWidth() const;
     float getEffectiveHeight() const;

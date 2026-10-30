@@ -23,6 +23,7 @@ public:
     virtual void addToSampleMapRequested(const MediaItem& /*item*/) {}
     virtual void autoSliceToSamplerRequested(const MediaItem& /*item*/) {}
     virtual void editSampleRequested(const MediaItem& /*item*/) {}
+    virtual void locateOnMapRequested(const MediaItem& /*item*/) {}
 };
 
 class SmoothTableListBox : public juce::TableListBox, private juce::Timer

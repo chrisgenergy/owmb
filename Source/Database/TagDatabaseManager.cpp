@@ -2262,6 +2262,11 @@ void TagDatabaseManager::loadFromFile()
         if (s >= 0.70 && s <= 2.0)
             uiScale = static_cast<float>(s);
     }
+
+    if (obj->hasProperty("isCloud2DMode"))
+    {
+        cloud2DModeActive = static_cast<bool>(obj->getProperty("isCloud2DMode"));
+    }
 }
 
 void TagDatabaseManager::saveToFile()
@@ -2287,6 +2292,7 @@ void TagDatabaseManager::saveToFile()
         rootObj->setProperty("isDarkMode", darkThemeActive);
         rootObj->setProperty("primaryColourHex", primaryColourHex);
         rootObj->setProperty("uiScale", static_cast<double>(uiScale));
+        rootObj->setProperty("isCloud2DMode", cloud2DModeActive);
         dbFile = getDatabaseFile();
     }
 
@@ -2472,6 +2478,21 @@ float TagDatabaseManager::getUiScale() const
 {
     const juce::ScopedLock sl(lock);
     return uiScale;
+}
+
+bool TagDatabaseManager::isCloud2DMode() const
+{
+    const juce::ScopedLock sl(lock);
+    return cloud2DModeActive;
+}
+
+void TagDatabaseManager::setCloud2DMode(bool is2D)
+{
+    {
+        const juce::ScopedLock sl(lock);
+        cloud2DModeActive = is2D;
+    }
+    saveToFile();
 }
 
 void TagDatabaseManager::setUiScale(float scale)

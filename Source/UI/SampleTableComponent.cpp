@@ -1055,6 +1055,7 @@ void SampleTableComponent::showContextMenuForRow(int rowNumber)
     menu.addItem(6, "Add to Sample Map");
     menu.addItem(7, "Slice to Sample Map...");
     menu.addItem(8, "Edit Sample in Editor");
+    menu.addItem(9, "Locate on Sound Map");
 
     menu.showMenuAsync(juce::PopupMenu::Options().withMousePosition(),
                        [this, item, rowNumber](int result) {
@@ -1138,6 +1139,12 @@ void SampleTableComponent::showContextMenuForRow(int rowNumber)
         {
             listeners.call([item](SampleTableListener& l) {
                 l.editSampleRequested(item);
+            });
+        }
+        else if (result == 9) // Locate on Sound Map
+        {
+            listeners.call([item](SampleTableListener& l) {
+                l.locateOnMapRequested(item);
             });
         }
     });

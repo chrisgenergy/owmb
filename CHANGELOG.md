@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.1.6] - 2026-10-30
 
 ### Added
+* **Search-to-Map Bridge (`SampleCloudComponent`, `HeaderBarComponent`, `SampleTableComponent`, `FolderBrowserComponent`)**:
+  * Seamlessly connects text-based search retrieval with spatial sound map memory.
+  * In Sound Map view (`Cloud`), pressing `Enter` / `Return` inside the search bar instantly flies the camera to the first matching search result, smoothly centers and zooms in on the sample, highlights it, and triggers audio preview.
+  * Added right-click context menu option **"Locate on Sound Map"** in both the Sample Table (List view) and Folder Browser, switching to Cloud view and focusing on the target sample.
+  * Automatically un-dims the target node if dimmed under filter dimming mode, updates the similarity dock, and animates the camera smoothly.
 * **Interactive Map Filter Dimming Toggle (`SampleCloudComponent`)**:
   * Added `Filter: Dim` / `Filter: Hide` toggle button on the map overlay, allowing users to choose between completely hiding filtered-out samples or keeping the entire universe visible with filtered-out samples softly dimmed.
   * In Dim mode, the universe map maintains 100% spatial continuity without layout jumps or re-calculations: matching samples shine with full vibrancy, while non-matching samples recede into a faint, dark background tone (`a = 0.14`, `radius * 0.75`).
@@ -22,6 +27,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   * Includes an informative hover tooltip and transparent click handling to avoid interfering with map panning or node selection.
 
 ### Fixed
+* **Camera Re-Anchoring on 2D / 3D Map View Switch (`SampleCloudComponent`)**:
+  * Fixed an issue where switching between 3D and 2D mode left the camera looking at empty void. The camera now dynamically re-anchors to the active sample's coordinate space (`pos2D` in 2D mode, `pos3D` in 3D mode) or universe center if unselected, keeping the sample centered across all dimension switches.
+* **Continuous Playback & Non-Interrupting Map Location (`OpenWavAudioProcessorEditor`, `SampleCloudComponent`)**:
+  * Prevented view mode changes between browsing views (`List`, `Folders`, `Cloud`) from cutting off audio playback.
+  * Right-clicking "Locate on Sound Map" now navigates and highlights the sample without restarting or interrupting currently playing audio from `0.0s`.
+* **2D / 3D Sound Map Preference Persistence (`TagDatabaseManager`, `SampleCloudComponent`)**:
+  * Persisted the user's 2D vs. 3D map preference so the sound map reliably opens in the user's preferred dimension without reverting to 3D.
 * **Cluster Outlier Elimination & Capsule Envelope Clamping Across All Categories (`SampleCloudComponent`)**:
   * Bounded sub-tag micro-attraction magnitude proportionally to each cluster's own `baseRadius` (max 2.5% or 14px) rather than unconstrained universe-scale distance, preventing samples with secondary sub-tags from being ejected into the void.
   * Added mathematical taper-aware capsule envelope enforcement (`allowedCross = baseRadius * sqrt(max(0.04, 1.0 - u^2 * 0.85)) * 0.68`) calibrated exactly to the 0.65 cluster body during initial node layout and after intra-cluster repulsion, smoothly tucking any boundary breaches flush into the cluster's dense outer rim. Completely eliminates stray outlier dots across all categories while fully preserving directional musical sub-tag orientation.

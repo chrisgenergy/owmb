@@ -140,10 +140,27 @@ SampleCloudComponent::SampleCloudComponent(TagDatabaseManager &db,
   };
   resetZoomButton.onClick = [this] { resetZoomAndPan(); };
 
+  is2DMode = dbManager.isCloud2DMode();
+  if (is2DMode) {
+    saved3DRotX = targetRotX;
+    saved3DRotY = targetRotY;
+    targetRotX = 0.0f;
+    targetRotY = 0.0f;
+    rotX = 0.0f;
+    rotY = 0.0f;
+    targetCameraCenterPos.z = 0.0f;
+    cameraCenterPos.z = 0.0f;
+    autoRotateButton.setEnabled(false);
+    viewModeButton.setButtonText("3D");
+  } else {
+    viewModeButton.setButtonText("2D");
+  }
+
   viewModeButton.onClick = [this] {
     if (layoutPending)
       return;
     is2DMode = !is2DMode;
+    dbManager.setCloud2DMode(is2DMode);
     if (is2DMode) {
       saved3DRotX = targetRotX;
       saved3DRotY = targetRotY;
@@ -151,13 +168,27 @@ SampleCloudComponent::SampleCloudComponent(TagDatabaseManager &db,
       targetRotY = 0.0f;
       rotX = 0.0f;
       rotY = 0.0f;
-      targetCameraCenterPos.z = 0.0f;
-      cameraCenterPos.z = 0.0f;
       autoRotateButton.setEnabled(false);
+      if (selectedNodeIndex >= 0 && selectedNodeIndex < static_cast<int>(nodes.size())) {
+        targetCameraCenterPos = nodes[selectedNodeIndex].pos2D;
+        cameraCenterPos = nodes[selectedNodeIndex].pos2D;
+      } else {
+        targetCameraCenterPos = {0.0f, 0.0f, 0.0f};
+        cameraCenterPos = {0.0f, 0.0f, 0.0f};
+      }
+      cameraVelocity = {0.0f, 0.0f, 0.0f};
     } else {
       targetRotX = saved3DRotX;
       targetRotY = saved3DRotY;
       autoRotateButton.setEnabled(true);
+      if (selectedNodeIndex >= 0 && selectedNodeIndex < static_cast<int>(nodes.size())) {
+        targetCameraCenterPos = nodes[selectedNodeIndex].pos3D;
+        cameraCenterPos = nodes[selectedNodeIndex].pos3D;
+      } else {
+        targetCameraCenterPos = {0.0f, 0.0f, 0.0f};
+        cameraCenterPos = {0.0f, 0.0f, 0.0f};
+      }
+      cameraVelocity = {0.0f, 0.0f, 0.0f};
     }
     viewModeButton.setButtonText(is2DMode ? "3D" : "2D");
     rebuildGpuBuffers();
@@ -1474,6 +1505,64 @@ void SampleCloudComponent::selectItemById(const juce::String &itemId) {
       break;
     }
   }
+}
+
+void SampleCloudComponent::locateAndFocusItem(const juce::String &itemId, bool triggerAudition) {
+  if (itemId.isEmpty())
+    return;
+
+  int foundIdx = -1;
+  for (size_t i = 0; i < nodes.size(); ++i) {
+    if (nodes[i].item.id == itemId) {
+      foundIdx = static_cast<int>(i);
+      break;
+    }
+  }
+
+  if (foundIdx < 0 && !universeNodes.empty()) {
+    for (size_t i = 0; i < universeNodes.size(); ++i) {
+      if (universeNodes[i].item.id == itemId) {
+        nodes = universeNodes;
+        clusters = universeClusters;
+        constellationEdges = universeEdges;
+        foundIdx = static_cast<int>(i);
+        rebuildGpuBuffers();
+        break;
+      }
+    }
+  }
+
+  if (foundIdx < 0 || foundIdx >= static_cast<int>(nodes.size()))
+    return;
+
+  if (nodes[foundIdx].isDimmed) {
+    nodes[foundIdx].isDimmed = false;
+    rebuildGpuBuffers();
+  }
+
+  selectedNodeIndex = foundIdx;
+  targetCameraCenterPos = is2DMode ? nodes[foundIdx].pos2D : nodes[foundIdx].pos3D;
+  if (is2DMode)
+    targetCameraCenterPos.z = 0.0f;
+
+  if (targetZoomScale < 1.4f) {
+    targetZoomScale = juce::jlimit(minZoomScale, maxZoomScale, 1.8f);
+  }
+
+  if (triggerAudition) {
+    juce::File targetFile(nodes[foundIdx].item.filePath);
+    if (!audioEngine.isPlaying() || audioEngine.getCurrentFile() != targetFile) {
+      audioEngine.auditionFile(targetFile);
+    }
+  }
+
+  updateSimilarStack();
+  listeners.call([&](SampleCloudListener &l) {
+    l.cloudSampleSelected(nodes[foundIdx].item);
+  });
+
+  overlayComponent.repaint();
+  repaint();
 }
 
 void SampleCloudComponent::updateSimilarStack() {

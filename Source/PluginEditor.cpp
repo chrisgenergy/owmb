@@ -306,6 +306,8 @@ void OpenWavAudioProcessorEditor::resized() {
     sampleCloud.setVisible(true);
     sampleCloud.setTransform(juce::AffineTransform());
     sampleCloud.setBounds(area);
+    sampleCloud.setItems(sampleTable.getDisplayedItems());
+    sampleCloud.refreshView();
   } else if (mode == ViewMode::Folders) {
     folderBrowser.setVisible(true);
     folderBrowser.setBounds(area);
@@ -351,6 +353,15 @@ void OpenWavAudioProcessorEditor::searchBarDownPressed() {
     folderBrowser.moveSelection(1);
   else
     sampleTable.moveSelection(1);
+}
+
+void OpenWavAudioProcessorEditor::searchBarReturnPressed() {
+  if (headerBar.getCurrentViewMode() == ViewMode::Cloud) {
+    const auto &items = sampleTable.getDisplayedItems();
+    if (!items.empty()) {
+      sampleCloud.locateAndFocusItem(items.front().id, true);
+    }
+  }
 }
 
 void OpenWavAudioProcessorEditor::timerCallback() {
@@ -722,6 +733,11 @@ void OpenWavAudioProcessorEditor::editSampleRequested(
   headerBar.setViewMode(ViewMode::Edit);
 }
 
+void OpenWavAudioProcessorEditor::locateOnMapRequested(const MediaItem &item) {
+  headerBar.setViewMode(ViewMode::Cloud);
+  sampleCloud.locateAndFocusItem(item.id, false);
+}
+
 bool OpenWavAudioProcessorEditor::isInterestedInFileDrag(
     const juce::StringArray &files) {
   for (const auto &f : files) {
@@ -769,7 +785,9 @@ void OpenWavAudioProcessorEditor::filesDropped(const juce::StringArray &files,
 }
 
 void OpenWavAudioProcessorEditor::viewModeChanged(ViewMode mode) {
-  audioProcessor.getAudioEngine().stop();
+  if (mode != ViewMode::Cloud && mode != ViewMode::List && mode != ViewMode::Folders) {
+    audioProcessor.getAudioEngine().stop();
+  }
   resized();
   if (mode == ViewMode::Cloud || mode == ViewMode::List || mode == ViewMode::Folders) {
     triggerFilterUpdate();
@@ -1040,4 +1058,3 @@ void OpenWavAudioProcessorEditor::restoreStateFromProcessor() {
 }
 
 } // namespace openwav
-
