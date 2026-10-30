@@ -78,7 +78,43 @@ private:
 
     juce::ImageComponent logoComponent;
     juce::Label titleLabel { {}, "OWMB" };
+    class ClearSearchButton : public juce::Component
+    {
+    public:
+        std::function<void()> onClick;
+
+        ClearSearchButton()
+        {
+            setMouseCursor(juce::MouseCursor::PointingHandCursor);
+            setInterceptsMouseClicks(true, false);
+        }
+
+        void mouseEnter(const juce::MouseEvent&) override { isHovered = true; repaint(); }
+        void mouseExit(const juce::MouseEvent&) override { isHovered = false; repaint(); }
+        void mouseDown(const juce::MouseEvent&) override { if (onClick) onClick(); }
+
+        void paint(juce::Graphics& g) override
+        {
+            auto b = getLocalBounds().toFloat().reduced(2.0f);
+            if (isHovered)
+            {
+                g.setColour(juce::Colours::white.withAlpha(0.15f));
+                g.fillEllipse(b);
+            }
+            g.setColour(isHovered ? juce::Colours::white : juce::Colour::fromRGB(140, 145, 155));
+            float sz = 4.0f;
+            float cx = b.getCentreX();
+            float cy = b.getCentreY();
+            g.drawLine(cx - sz, cy - sz, cx + sz, cy + sz, 1.5f);
+            g.drawLine(cx + sz, cy - sz, cx - sz, cy + sz, 1.5f);
+        }
+
+    private:
+        bool isHovered = false;
+    };
+
     juce::TextEditor searchEditor;
+    ClearSearchButton clearSearchButton;
     juce::TextButton addFolderButton { "+ Add Folder" };
     juce::TextButton rescanButton { "Rescan" };
     juce::TextButton settingsButton { "Settings" };

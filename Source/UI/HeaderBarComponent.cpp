@@ -24,7 +24,19 @@ HeaderBarComponent::HeaderBarComponent(TagDatabaseManager& db, LibraryScanner& s
     searchEditor.setTextToShowWhenEmpty("Search by name, tag, or path...", OpenWavLookAndFeel::textSecondary);
     searchEditor.addListener(this);
     searchEditor.addKeyListener(this);
+    searchEditor.setBorder(juce::BorderSize<int>(1, 6, 1, 26));
     addAndMakeVisible(searchEditor);
+
+    clearSearchButton.onClick = [this] {
+        searchEditor.clear();
+        clearSearchButton.setVisible(false);
+        searchEditor.grabKeyboardFocus();
+        listeners.call([](HeaderBarListener& l) {
+            l.searchTextChanged({});
+        });
+    };
+    clearSearchButton.setVisible(false);
+    searchEditor.addChildComponent(clearSearchButton);
 
     // Add Folder Button
     addFolderButton.onClick = [this] {
@@ -123,6 +135,8 @@ void HeaderBarComponent::resized()
     int maxAvailForSearch = std::max(110, area.getWidth() - neededForFiltersAndViews - 8);
     int searchWidth = juce::jlimit(110, 260, std::min(maxAvailForSearch, (area.getWidth() - 828) / 2 + 140));
     searchEditor.setBounds(area.removeFromLeft(searchWidth).withHeight(btnHeight));
+    clearSearchButton.setBounds(searchEditor.getWidth() - 22, (btnHeight - 18) / 2, 18, 18);
+    // Child of searchEditor, always drawn on top
     area.removeFromLeft(10);
 
     // 4. Format Filter Buttons (.WAV, .MP3, .FLAC, .OGG, .AIFF)
@@ -165,6 +179,7 @@ void HeaderBarComponent::textEditorTextChanged(juce::TextEditor& editor)
 {
     if (&editor == &searchEditor)
     {
+        clearSearchButton.setVisible(searchEditor.getText().isNotEmpty());
         listeners.call([txt = searchEditor.getText()](HeaderBarListener& l) {
             l.searchTextChanged(txt);
         });
@@ -284,13 +299,24 @@ void HeaderBarComponent::lookAndFeelChanged()
 void HeaderBarComponent::setSearchText(const juce::String& text)
 {
     searchEditor.setText(text, juce::dontSendNotification);
+    clearSearchButton.setVisible(text.isNotEmpty());
 }
 
 bool HeaderBarComponent::keyPressed(const juce::KeyPress& key, juce::Component* originatingComponent)
 {
     if (originatingComponent == &searchEditor)
     {
-        if (key == juce::KeyPress::upKey)
+        if (key == juce::KeyPress::escapeKey)
+        {
+            if (searchEditor.getText().isNotEmpty())
+            {
+                searchEditor.clear();
+                clearSearchButton.setVisible(false);
+                listeners.call([](HeaderBarListener& l) { l.searchTextChanged({}); });
+                return true;
+            }
+        }
+        else if (key == juce::KeyPress::upKey)
         {
             listeners.call([](HeaderBarListener& l) { l.searchBarUpPressed(); });
             return true;
