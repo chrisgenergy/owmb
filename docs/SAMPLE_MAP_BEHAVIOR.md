@@ -84,7 +84,7 @@ To resolve this without corrupting drum one-shots, the engine implements a dedic
 ```cpp
 auto isMisclassifiedBeat = [&](const juce::String& cat) -> bool
 {
-    if (cat != "bass" && cat != "synth")
+    if (cat == "loop")
         return false;
 
     const juce::String fn = item.fileName.toLowerCase();
@@ -92,16 +92,28 @@ auto isMisclassifiedBeat = [&](const juce::String& cat) -> bool
     if (fn.contains("bass") && !fn.contains("bass drum") && !fn.contains("bassdrum") && !fn.contains("bass_drum"))
         return false;
 
-    // Filename indicators for beat loops and kit previews
-    if (fn.contains("beat") || fn.contains("drumkit") || fn.contains("groove") ||
-        fn.contains("breakbeat") || fn.contains("drumloop") || fn.contains("drum loop"))
+    // Word-boundary drum beat indicators: "beat", "beats", "drumkit", "breakbeat", "drum loop"
+    bool hasBeatKeyword = isKeywordMatch(fn, "beat") || isKeywordMatch(fn, "beats") ||
+                          fn.contains("breakbeat") || fn.contains("drumkit") ||
+                          fn.contains("drumloop") || fn.contains("drum loop") ||
+                          (isKeywordMatch(fn, "groove") && !cat.contains("keys") && !cat.contains("synth"));
+
+    if (hasBeatKeyword && item.durationSeconds >= 1.2)
         return true;
 
-    // Path indicators: explicit loop folder with drums/grooves and duration >= 1.5s
-    const juce::String fp = item.filePath.toLowerCase();
-    if (item.durationSeconds >= 1.5 && (fp.contains("drum loop") || (fp.contains("loop") && fp.contains("drum")) ||
-                                        fp.contains("drum rack") || fp.contains("grooves")))
-        return true;
+    // Folder is explicitly a drum loop folder or groove preview (with duration >= 1.2s)
+    const juce::String fp = item.filePath.toLowerCase().replaceCharacter('/', '\\');
+    if (item.durationSeconds >= 1.2)
+    {
+        if (fp.contains("\\midi clips\\drums\\") ||
+            fp.contains("\\loops\\drums\\full\\") ||
+            fp.contains("\\drum racks\\") ||
+            fp.contains("\\grooves\\"))
+            return true;
+
+        if (fp.contains("\\loops\\drums\\") && (hasBeatKeyword || fp.contains("full") || fp.contains("mix")))
+            return true;
+    }
 
     return false;
 };

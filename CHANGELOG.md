@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.1.4] - 2026-10-30
+
+### Fixed
+* **Beat Loops & Grooves Misclassification Across All Categories (`TagDatabaseManager`)**:
+  * **Root Cause Analysis**:
+    1. *`MIDI Clips\Drums` Preview Misrouting*: In Ableton Core Library (and standard sample packs), preview audio files for drum clips (e.g. `Pop Relaxed 104 bpm.alc.ogg`, `Dancehall Trap 113 bpm.alc.ogg`, `909 Core Kit House 127 bpm.alc.ogg`) reside under `Previews\MIDI Clips\Drums\`. Because their path does not contain the word `"loop"`, path inference did not mark them as `#DrumLoop`, triggering audio feature fallback which erroneously tagged them with `#MelodicLoop` and `#Synth`.
+    2. *Priority Inversion*: In `priorityList`, `#Synth` (Priority Rank 6) took precedence over `#DrumLoop` (Priority Rank 8), causing 64 drum beat loops to be routed into the `synth` category cluster.
+    3. *Predicate Path Gap in `isMisclassifiedBeat`*: The previous predicate only inspected `cat == "bass" || cat == "synth"` and required `"drum loop"` or `"loop"` in the file path, failing to catch drum clip paths or groove files.
+    4. *Multi-Drum Loop Sanitization*: `sanitizeTags` previously required `hasKick && hasOtherDrums` to consolidate drum loops, failing on loops composed of hat + snare (`Hats and Snare UK Garage 127 bpm.aif`), hat + clap (`Hihat Clap House 120 bpm.wav`), or kick + ride (`EDM Kick and Ride 128 bpm.wav`), which collapsed into individual one-shot categories (`snare`, `clap`, `ride`).
+    5. *Substring Collision False Positives*: Unconstrained substring matching for `"kit"` and `"beat"` in `inferTagsFromPath` and `sanitizeItem` erroneously stamped `#DrumLoop` on non-drum instrument presets like `Here Kitty Kitty.adv.ogg` (`"kit"` in `"kitty"`) and `Beating Vibraphone.adv.ogg` (`"beat"` in `"beating"`).
+  * **Fixes Implemented**:
+    - *Comprehensive Beat Safeguard*: Broadened `isMisclassifiedBeat` to check any non-loop category (`cat != "loop"`) and explicitly detect `\midi clips\drums\`, `\loops\drums\full\`, `\drum racks\`, and `\grooves\` for samples >= 1.2s, backed by strict word-boundary matching (`isKeywordMatch`) for `"beat"`, `"beats"`, `"breakbeat"`, and `"drumkit"`.
+    - *Multi-Family Drum Loop Consolidation*: Enhanced `sanitizeTags` to count distinct drum families (Kick, Snare, Clap, Hat, Tom, Cymbal). If any loop sample possesses >= 2 distinct drum families, it is automatically consolidated into `#DrumLoop` and all individual one-shot tags are purged.
+    - *Drum Loop Tag Hygiene*: Guaranteed that any sample carrying `#DrumLoop` automatically strips accidental `#MelodicLoop` and generic `#Synth` tags.
+    - *Word-Boundary & Preset Protection*: Replaced all raw substring checks with `isKeywordMatch` across `getCanonicalCategory`, `inferTagsFromPath`, and `sanitizeItem`. Explicitly safeguarded harmonic instrument presets (`keys`, `synth`, `strings`, `brass`, etc.) against accidental drum tags.
+    - *Library Index Sanitization*: Purged accidental `#Synth` and `#MelodicLoop` tags from all 108 files in `MIDI Clips\Drums`, and cleared false `#DrumLoop` tags from affected instrument presets in `library_index.json`.
+
+### Changed
+* **Sample Cloud Binary Layout Cache Version Bump (Version 14)**:
+  * Incremented binary cache format version from `13` to `14` in `SampleCloudComponent` to automatically purge stale layouts and regenerate pristine spatial coordinates where all drum beat loops sit properly clustered in `loop`.
+
 ## [1.1.3] - 2026-10-29
 
 ### Fixed

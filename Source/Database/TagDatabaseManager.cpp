@@ -1112,7 +1112,7 @@ juce::String TagDatabaseManager::getCanonicalCategory(const juce::String& tag)
     if (t.contains("cowbell")) return "cowbell";
     if (t.contains("conga") || t.contains("bongo")) return "bongo/conga";
     if (t.contains("perc")) return "percussion";
-    if (t.contains("drum") || t.contains("kit") || t.contains("beat")) return "loop";
+    if (t.contains("drum") || t.contains("breakbeat") || isKeywordMatch(t, "kit") || isKeywordMatch(t, "kits") || isKeywordMatch(t, "beat") || isKeywordMatch(t, "beats")) return "loop";
     if (t.contains("bass")) return "bass";
     if (t.contains("piano") || t.contains("rhodes") || t.contains("organ") || t.contains("keys") || t.contains("chord")) return "keys";
     if (t.contains("guitar") || t.contains("gtr")) return "guitar";
@@ -1136,10 +1136,10 @@ juce::String TagDatabaseManager::getCanonicalCategoryForItem(const MediaItem& it
         return "other";
     }
 
-    // Helper: Determine if a sample is genuinely a drum beat / groove loop that was misclassified as bass or synth
+    // Helper: Determine if a sample is genuinely a drum beat / groove loop that was misclassified
     auto isMisclassifiedBeat = [&](const juce::String& cat) -> bool
     {
-        if (cat != "bass" && cat != "synth")
+        if (cat == "loop")
             return false;
 
         const juce::String fn = item.fileName.toLowerCase();
@@ -1147,19 +1147,33 @@ juce::String TagDatabaseManager::getCanonicalCategoryForItem(const MediaItem& it
         if (fn.contains("bass") && !fn.contains("bass drum") && !fn.contains("bassdrum") && !fn.contains("bass_drum"))
             return false;
 
-        // Filename has clear drum loop indicators: "beat", "drumkit", "groove", "breakbeat", "drum loop"
-        if (fn.contains("beat") || fn.contains("drumkit") || fn.contains("groove") ||
-            fn.contains("breakbeat") || fn.contains("drumloop") || fn.contains("drum loop"))
+        // Word-boundary drum beat indicators: "beat", "beats", "drumkit", "breakbeat", "drum loop"
+        bool hasBeatKeyword = isKeywordMatch(fn, "beat") || isKeywordMatch(fn, "beats") ||
+                              fn.contains("breakbeat") || fn.contains("drumkit") ||
+                              fn.contains("drumloop") || fn.contains("drum loop") ||
+                              (isKeywordMatch(fn, "groove") && !cat.contains("keys") && !cat.contains("synth"));
+
+        if (hasBeatKeyword && item.durationSeconds >= 1.2)
         {
             return true;
         }
 
-        // Folder is explicitly a loop folder with drums/beats/grooves (and duration >= 1.5s)
-        const juce::String fp = item.filePath.toLowerCase();
-        if (item.durationSeconds >= 1.5 && (fp.contains("drum loop") || (fp.contains("loop") && fp.contains("drum")) ||
-                                            fp.contains("drum rack") || fp.contains("grooves")))
+        // Folder is explicitly a drum loop folder or groove preview (with duration >= 1.2s)
+        const juce::String fp = item.filePath.toLowerCase().replaceCharacter('/', '\\');
+        if (item.durationSeconds >= 1.2)
         {
-            return true;
+            if (fp.contains("\\midi clips\\drums\\") ||
+                fp.contains("\\loops\\drums\\full\\") ||
+                fp.contains("\\drum racks\\") ||
+                fp.contains("\\grooves\\"))
+            {
+                return true;
+            }
+
+            if (fp.contains("\\loops\\drums\\") && (hasBeatKeyword || fp.contains("full") || fp.contains("mix")))
+            {
+                return true;
+            }
         }
 
         return false;
@@ -1438,8 +1452,18 @@ void TagDatabaseManager::sanitizeTags(std::set<juce::String>& tags)
     bool hasKick = (tags.find("#Kick") != tags.end() || tags.find("#SubKick") != tags.end());
     bool isLoopSample = (tags.find("#Loop") != tags.end() || hasTypedLoop);
 
-    // 4. Multi-drum loops (e.g. "Kick_Snare_Loop.wav") become #DrumLoop rather than a single drum one-shot
-    if (isLoopSample && hasKick && hasOtherDrums)
+    // 4. Multi-drum loops (e.g. "Kick_Snare_Loop.wav", "Hats and Snare UK Garage.aif", "Hihat Clap House.wav")
+    bool hasSnareDrum = (tags.find("#Snare") != tags.end() || tags.find("#Rimshot") != tags.end());
+    bool hasClapDrum  = (tags.find("#Clap") != tags.end() || tags.find("#Snap") != tags.end());
+    bool hasHatDrum   = (tags.find("#HiHat") != tags.end() || tags.find("#OpenHat") != tags.end() || tags.find("#ClosedHat") != tags.end());
+    bool hasTomDrum   = (tags.find("#Tom") != tags.end());
+    bool hasCymbalDrum = (tags.find("#Crash") != tags.end() || tags.find("#Ride") != tags.end() || tags.find("#Cymbal") != tags.end());
+    bool hasKickDrum  = (tags.find("#Kick") != tags.end() || tags.find("#SubKick") != tags.end());
+
+    int drumFamilyCount = (hasKickDrum ? 1 : 0) + (hasSnareDrum ? 1 : 0) + (hasClapDrum ? 1 : 0) +
+                          (hasHatDrum ? 1 : 0) + (hasTomDrum ? 1 : 0) + (hasCymbalDrum ? 1 : 0);
+
+    if (isLoopSample && (drumFamilyCount >= 2 || (hasKick && hasOtherDrums)))
     {
         tags.insert("#DrumLoop");
         tags.erase("#Kick");
@@ -1451,8 +1475,23 @@ void TagDatabaseManager::sanitizeTags(std::set<juce::String>& tags)
         tags.erase("#HiHat");
         tags.erase("#OpenHat");
         tags.erase("#ClosedHat");
+        tags.erase("#Tom");
+        tags.erase("#Crash");
+        tags.erase("#Ride");
+        tags.erase("#Cymbal");
         hasKick = false;
         hasOtherDrums = false;
+    }
+
+    // Drum loops should never retain accidental #MelodicLoop or generic #Synth tags
+    if (tags.find("#DrumLoop") != tags.end())
+    {
+        tags.erase("#MelodicLoop");
+        if (tags.find("#Lead") == tags.end() && tags.find("#Pad") == tags.end() &&
+            tags.find("#Pluck") == tags.end() && tags.find("#Arp") == tags.end())
+        {
+            tags.erase("#Synth");
+        }
     }
 
     // 5. Note: Tuned kicks (#Key_* + #Kick) MUST KEEP #Kick!
@@ -1563,18 +1602,66 @@ void TagDatabaseManager::sanitizeTags(std::set<juce::String>& tags)
 
 void TagDatabaseManager::sanitizeItem(MediaItem& item)
 {
-    // Strip accidental #Bass/#BassLoop on beats/drums that lack "bass" in their filename
-    bool isBeatOrDrum = (item.fileName.containsIgnoreCase("beat") || item.fileName.containsIgnoreCase("drum") ||
-                         item.fileName.containsIgnoreCase("kit") || item.fileName.containsIgnoreCase("groove") ||
-                         item.fileName.containsIgnoreCase("break") ||
-                         item.filePath.containsIgnoreCase("drums") || item.filePath.containsIgnoreCase("drum loop"));
-    bool explicitlyHasBassInName = item.fileName.containsIgnoreCase("bass");
-    if (isBeatOrDrum && !explicitlyHasBassInName)
+    const juce::String fn = item.fileName.toLowerCase();
+    const juce::String fp = item.filePath.toLowerCase().replaceCharacter('/', '\\');
+
+    // Clean up accidental #DrumLoop on non-drum instruments (caused by substring collisions like "kitty", "beating", "kitchen")
+    bool hasMelodicOrHarmonicTag = (item.tags.find("#Keys") != item.tags.end() || item.tags.find("#Piano") != item.tags.end() ||
+                                    item.tags.find("#Rhodes") != item.tags.end() || item.tags.find("#Organ") != item.tags.end() ||
+                                    item.tags.find("#Guitar") != item.tags.end() || item.tags.find("#AcousticGuitar") != item.tags.end() ||
+                                    item.tags.find("#ElectricGuitar") != item.tags.end() ||
+                                    item.tags.find("#Strings") != item.tags.end() || item.tags.find("#Violin") != item.tags.end() ||
+                                    item.tags.find("#Cello") != item.tags.end() || item.tags.find("#Brass") != item.tags.end() ||
+                                    item.tags.find("#Woodwinds") != item.tags.end() || item.tags.find("#Flute") != item.tags.end() ||
+                                    item.tags.find("#Vocal") != item.tags.end() || item.tags.find("#Acapella") != item.tags.end() ||
+                                    item.tags.find("#Lead") != item.tags.end() || item.tags.find("#Pad") != item.tags.end());
+
+    bool isPureInstrumentPreset = fp.contains("\\instruments\\") && !fp.contains("\\impulse\\");
+
+    if ((hasMelodicOrHarmonicTag || isPureInstrumentPreset) &&
+        !fp.contains("\\drums\\") && !fp.contains("\\grooves\\"))
     {
-        item.tags.erase("#Bass");
-        item.tags.erase("#BassLoop");
-        item.tags.erase("#SubBass");
+        bool isActualBeatInName = isKeywordMatch(fn, "beat") || isKeywordMatch(fn, "beats") ||
+                                  fn.contains("breakbeat") || fn.contains("drumkit") || fn.contains("drumloop");
+        if (!isActualBeatInName)
+        {
+            item.tags.erase("#DrumLoop");
+        }
+    }
+
+    // Strip accidental #Bass/#BassLoop on beats/drums that lack "bass" in their filename
+    bool hasAccidentalBassTag = (item.tags.find("#Bass") != item.tags.end() ||
+                                 item.tags.find("#BassLoop") != item.tags.end() ||
+                                 item.tags.find("#SubBass") != item.tags.end());
+    if (hasAccidentalBassTag)
+    {
+        bool hasBassInName = fn.contains("bass") && !fn.contains("bass drum") && !fn.contains("bassdrum") && !fn.contains("bass_drum");
+        if (!hasBassInName)
+        {
+            bool isDrumOrBeatPath = fp.contains("\\midi clips\\drums\\") || fp.contains("\\loops\\drums\\") ||
+                                    fp.contains("\\drum racks\\") || fp.contains("drum loop");
+            bool isDrumOrBeatName = isKeywordMatch(fn, "beat") || isKeywordMatch(fn, "beats") ||
+                                    isKeywordMatch(fn, "drum") || isKeywordMatch(fn, "drums") ||
+                                    isKeywordMatch(fn, "kit") || isKeywordMatch(fn, "kits") ||
+                                    fn.contains("drumkit") || fn.contains("breakbeat");
+            if (isDrumOrBeatPath || isDrumOrBeatName)
+            {
+                item.tags.erase("#Bass");
+                item.tags.erase("#BassLoop");
+                item.tags.erase("#SubBass");
+                if (item.durationSeconds >= 1.2)
+                    item.tags.insert("#DrumLoop");
+            }
+        }
+    }
+
+    // Ensure Drum Clips/Grooves have #DrumLoop and #Loop, and strip accidental #Synth/#MelodicLoop
+    if (fp.contains("\\midi clips\\drums\\") || fp.contains("\\loops\\drums\\full\\") || fp.contains("\\drum racks\\"))
+    {
         item.tags.insert("#DrumLoop");
+        item.tags.insert("#Loop");
+        item.tags.erase("#Synth");
+        item.tags.erase("#MelodicLoop");
     }
 
     sanitizeTags(item.tags);
@@ -1920,6 +2007,14 @@ std::set<juce::String> TagDatabaseManager::inferTagsFromPath(const juce::String&
     bool hasFilenameCategory = false;
     const bool kickNegatedInName = hasKickNegation(fileNameLower);
 
+    const juce::String fpNormLower = filePath.toLowerCase().replaceCharacter('/', '\\');
+    if (fpNormLower.contains("\\midi clips\\drums\\") || fpNormLower.contains("\\loops\\drums\\full\\"))
+    {
+        tags.insert("#DrumLoop");
+        tags.insert("#Loop");
+        hasFilenameCategory = true;
+    }
+
     // Check filename first for high-priority matching
     for (const auto& r : rules)
     {
@@ -1960,7 +2055,7 @@ std::set<juce::String> TagDatabaseManager::inferTagsFromPath(const juce::String&
     }
 
     // Ableton Drum Rack presets (.adg.ogg) and Kit previews
-    if ((fileNameLower.contains(".adg") || fileNameLower.contains("kit")) &&
+    if ((fileNameLower.contains(".adg") || isKeywordMatch(fileNameLower, "kit") || isKeywordMatch(fileNameLower, "kits") || fileNameLower.contains("drumkit")) &&
         !hasFilenameCategory &&
         !fileNameLower.contains("synth") && !fileNameLower.contains("lead") &&
         !fileNameLower.contains("keys") && !fileNameLower.contains("piano") &&
