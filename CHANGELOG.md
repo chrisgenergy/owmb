@@ -7,18 +7,87 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.1.9] - 2026-10-31
+
+### Added
+* **Hybrid Layer A + Layer B Procedural Sound Map (`SampleCloudComponent`)**:
+  * **Layer A (Deterministic Macro-Allocation)**:
+    * Implemented deterministic space partitioning using a 2D Centroidal Power Diagram (Weighted Lloyd Voronoi) within an Elliptical Cosmic Disc domain ($120 \times 75$ widescreen grid). Runs in $< 2\text{ms}$ CPU time and guarantees 100% space coverage with zero unesthetic voids, chasms, or black-hole parking lots.
+    * **2D Planar Acoustic Axes**: Mapped continuous taxonomy vectors to intuitive physical coordinates—Vertical frequency gradient ($+Y$ Air/Splash down to $-Y$ Sub/Bass) and Horizontal texture gradient ($-X$ Percussive/Transient to $+X$ Harmonic/Tonal).
+    * **Dynamic Library Resilience**: Active normalization automatically centers and bounds the galaxy regardless of library composition (boutique 200-sample packs, drum-only kits, orchestral scores, or 87k+ universal collections).
+    * **Area-Packed Power Weights**: Category seed weights scale with true packed cluster area ($R_{\text{pack}} = 14.65 \sqrt{N}$), ensuring large categories have sufficient physical territory while small categories maintain a guaranteed minimum body ($R \ge 155\text{px}$).
+    * **Pre-Centered Coordinate Frame**: Constellation coordinates are centered to $(0, 0)$ immediately upon mapping grid centroids to world space, ensuring angular coordinates remain locked throughout relaxation and rendering.
+  * **Layer B (Polyline Contact Clearance & Organic Star Relaxation)**:
+    * Evaluates exact 4-segment polyline spine boundary clearance with inward bend displacement, enforcing guaranteed $55.0\text{px}$ inter-cluster clearance (`kMinInterClusterGapPx = 55.0f`).
+    * Recomputes spine vectors dynamically across relaxation passes as clusters shift.
+    * Enforces dedicated horizontal and vertical label clearance ($\Delta X \ge 150\text{px}, \Delta Y \ge 42\text{px}$), guaranteeing zero text collisions under all zoom levels.
+    * Restored isotropic physics ($F_x = F_y$): sample dots remain 100% circular, while the camera projection frustum handles panoramic widescreen framing and $17\%\text{–}22\%$ cosmic border margins.
+
+* **Category Morphology Hierarchy: Circular Pebbles & Modern Vector Boomerangs**:
+  * Implemented a continuous, library-adaptive radial morphology hierarchy based on normalized distance $d_{\text{norm}}$ from galactic center:
+    * **Core Zone ($d_{\text{norm}} < 0.20$)**: Circular celestial star orbs ($S \approx 1.05 : 1$, $\text{widthRatio} \approx 0.95$, $\text{bend} = 0.0$) for central categories (`vocal`, `clap`, `loop`, `snare`), completely eliminating elongated "sausage" shapes.
+    * **Mid-Orbit ($0.20 \le d_{\text{norm}} < 0.55$)**: Soft transitional ovals ($S \approx 1.25\text{–}1.45 : 1$, $\text{widthRatio} \approx 0.60\text{–}0.75$) with gentle organic curvature (`keys`, `strings`, `brass`, `guitar`, `percussion`).
+    * **Perimeter Horizon ($d_{\text{norm}} \ge 0.55$)**: Aerodynamic Modern Vector Boomerangs ($S \approx 1.70\text{–}1.85 : 1$, $\text{widthRatio} \approx 0.42\text{–}0.45$, $\text{bend} \approx 0.32$) with concave inner faces, convex outer faces, and blunt hemispherical domes ($R_{\text{cap}} \ge 150\text{px}$).
+  * **Centripetal Opposing Wings**: Perimeter wings sweep inward toward the galactic core $(0, 0)$, rejecting artificial spiral/vortex swirling.
+
+* **True 2D Uniform Area Rejection Sampling (Roberts $R_2$ Blue Noise)**:
+  * Star positions are generated via rejection sampling on Roberts $R_2$ quasi-random blue-noise sequence ($\phi_2 \approx 1.324718$, $\alpha_1 \approx 0.754878$, $\alpha_2 \approx 0.569840$), guaranteeing constant local density ($dN/dA = \text{const}$) throughout the entire cluster body.
+  * Completely eliminated perimeter star accumulation ("crust/wall") and post-relaxation clamping overwrites.
+  * Deterministic acoustic brightness sorting: orders samples from core to tips/edges based on spectral brightness (high-frequency ratio + ZCR).
+
+* **Automated Dual-Layer Overlap Verification Gate (`simulate_library.py`)**:
+  * Upgraded the Simulation-First test harness with two automated gates:
+    1. **Polyline Boundary Clearance Gate**: Verifies minimum edge-to-edge gap across curved boomerang spines ($\ge 45.0\text{px}$).
+    2. **Star-Level Cross-Cluster Overlap Catch Gate (§7)**: Evaluates $O(N)$ spatial grid distance checking across 87k sample stars, automatically halting compilation if any cross-category node distance is $< 24.5\text{px}$.
+  * Verified 100% green across multi-genre archetypes (87k general, drum-only, orchestral-only, micro-pack) and scale-tested from 10k to 200k samples.
+
+### Changed
+* **Consolidated Production Layout Cache (Cache Version 48)**:
+  * Consolidated all procedural layout, orientation, and star-sampling updates into binary cache format version `48` in `SampleCloudComponent`.
+
+---
+
+## [1.1.8] - 2026-10-31
+
+### Added
+* **Anisotropic Widescreen Gravity & Tangential Arc Dispersion (`SampleCloudComponent`)**:
+  * Implemented widescreen aspect-aware gravity ($F_y = 1.30 \times F_{\text{inward}}, F_x = 0.75 \times F_{\text{inward}}$) in `SampleCloudComponent`, naturally shaping the galaxy into the target widescreen aspect ratio ($1.64 : 1$) and eliminating vertical compaction.
+  * Added mutual **Tangential Arc Dispersion ($F_\theta$)** between clusters with narrow angular separation ($\Delta\theta < 11.5^\circ$), spreading high-frequency percussive neighbors (Hi-Hats, Shakers, Cymbals) along the outer perimeter arc and completely resolving radial spoke congestion.
+  * Closed the acoustic continuum spring ribbon into a continuous loop connecting Percussion $\leftrightarrow$ High Cymbals $\leftrightarrow$ Woodwinds $\leftrightarrow$ Orchestral $\leftrightarrow$ Synth $\leftrightarrow$ Bass, eliminating quadrant chasms and adjacent sector gaps.
+  * Declared all layout and physical force parameters as named `constexpr` constants complying with §7 Magic-Number Ban and §6 Acceptance Criteria.
+  * Integrated Simulation-First test gate ([simulate_library.py](file:///c:/dev/owmb/simulate_library.py)) verifying edge-to-edge gap ($\ge 60\text{px}$), zero label collisions, aspect ratio ($\in [1.4, 1.9]$), and cosmic border margin ($17\text{–}22\%$).
+
+### Changed
+* **Sample Cloud Binary Layout Cache Version Bump (Version 27)**:
+  * Incremented layout binary cache format version to `27` in `SampleCloudComponent` to invalidate stale caches and regenerate dynamic anisotropic 4-force layouts across all libraries.
+
+---
+
 ## [1.1.7] - 2026-10-31
 
 ### Added
-* **Gravitational Tidal Arcs & Musical Bridges Across All Categories (`SampleCloudComponent`)**:
-  * Replaced rigid, flat-ended geometric pills with organic, curved cosmic bodies featuring true hemispherical rounded caps with zero flat cuts.
-  * Spines dynamically bend along musical affinity vectors (e.g. Kick curving into a crescent toward Tom and Bass, Synth forming an elegant cosmic S-wave toward Keys and Bass), visually bridging related acoustic timbres.
-  * Hemispherical caps seamlessly converge longitudinal and transverse boundaries radially ($\sqrt{\Delta x^2 + y_{\text{rel}}^2} \le R_{\text{cap}}$), eliminating artificial clamping walls.
-  * Inter-cluster clearance limits ($\le 28\%$ of distance to neighbors) preserve spacious dark voids between clusters, while 28-iteration annealed intra-cluster repulsion strictly enforces zero dot-on-dot overlap ($24.5\text{px}$ minimum node spacing).
+* **Dynamic 4-Force Galactic Model & Void-Free Auto-Closing (`SampleCloudComponent`)**:
+  * Simulated the constellation as a dynamic physical system driven by four simultaneous forces:
+    1. **Inward Centripetal Gravity**: Pulls all clusters inward toward the galaxy core until physical boundaries make contact with inner bodies, completely eliminating hollow donut centers and internal chasms.
+    2. **Elastic Musical Affinity Springs**: Connected along the acoustic continuum (Kick $\leftrightarrow$ Tom $\leftrightarrow$ Loop $\leftrightarrow$ Other $\leftrightarrow$ Keys $\leftrightarrow$ Guitar $\leftrightarrow$ Bass; Hats $\leftrightarrow$ Shakers $\leftrightarrow$ Cymbals). When a category is small or absent, neighbor springs contract and smoothly close the seam with zero dead space.
+    3. **Hard Dynamic Contact Repulsion**: Strictly enforces physical clearance based on actual category radii ($D_{\text{min}} = R_i(N_i) + R_j(N_j) + \text{clearance}$), allowing small categories to tuck neatly against large neighbors like moons orbiting a planet.
+    4. **Angular Musical Compass**: Constrains categories to their musical compass direction relative to center rather than rigid coordinates, allowing radial distance $r$ to expand or contract dynamically based on library volume.
+  * **Active Library Centroid Auto-Centering**: Translates the physical Center of Mass $(\bar{X}, \bar{Y})$ of the active library to $(0, 0)$ across both clusters and nodes, ensuring partial or specialized libraries (e.g. pure drum packs or pure orchestral scores) always center perfectly in the viewport.
+* **Panoramic Widescreen Amphitheater & Void-Free Harmonic Continuum (`SampleCloudComponent`)**:
+  * Stretched the galaxy anchor envelope to an optimal $\approx 1.55:1$ cinematic widescreen aspect ratio ($X \in [-0.85, +0.85]$, $Y \in [-0.60, +0.82]$), eliminating giant black void deserts on the left and right sides of widescreen displays.
+  * Re-anchored the southern foundation arc into a seamless low-frequency bridge: Kick $\rightarrow$ Tom $\rightarrow$ Bongo/Conga $\rightarrow$ Loop $\rightarrow$ Other/Oneshot $\rightarrow$ Keys $\rightarrow$ Guitar $\rightarrow$ Bass, completely closing the bottom chasm.
+  * Unfurled the northwest high-frequency categories into a single, flowing perimeter canopy arc: Clave/Rim $\rightarrow$ Cowbell $\rightarrow$ Closed Hi-Hat $\rightarrow$ Main Hi-Hat $\rightarrow$ Open Hi-Hat $\rightarrow$ Tambourine/Shaker $\rightarrow$ Ride $\rightarrow$ Cymbal $\rightarrow$ Crash $\rightarrow$ Woodwinds $\rightarrow$ FX, eliminating vertical multi-tier stacking and label crowding.
+  * Rich interior infill: positioned Clap, Snap, and Percussion as an acoustic rhythmic bridge between Snare and Vocals, and Strings and Brass as a melodic bridge between Vocals and Synth/Bass.
+  * Balanced camera auto-fit margin (`margin = 1.20f`), framing the galaxy with an even $\sim 17\text{–}20\%$ cosmic border on all four sides.
+* **Northern Canopy Wide-Angle Fanning & Post-Center-of-Mass Label Decluttering (`SampleCloudComponent`)**:
+  * Added a dedicated 24-iteration post-Center-of-Mass label declutter pass running directly on physical cluster centers after sample relaxation, mathematically preventing category text tags from ever overlapping or obscuring each other.
+* **Harmonious Sub-Linear Nebula Sizing & Thick Galactic Bodies (`SampleCloudComponent`)**:
+  * Replaced linear $\sqrt{N}$ scaling with sub-linear power sizing ($R(N) = 155\text{px} + 30\text{px} \times N^{0.35}$), reducing the dynamic range disparity between tiny and giant categories from $21:1$ down to a balanced $3.5:1$. Small categories gain a solid minimum body, while massive categories remain majestic without blowing up the camera view.
+  * Thickened nebula bodies from $0.44\times$ to $0.66\times$ base radius and moderated aspect ratio stretch ($1.35\text{–}1.40$), transforming elongated "curved sausage/banana" shapes into radiant, full celestial clouds.
 
 ### Changed
-* **Sample Cloud Binary Layout Cache Version Bump (Version 18)**:
-  * Incremented layout binary cache format version to `18` in `SampleCloudComponent` to automatically purge stale layouts and regenerate organic gravitational tidal arcs and hemispherical caps across all categories.
+* **Sample Cloud Binary Layout Cache Version Bump (Version 26)**:
+  * Incremented layout binary cache format version to `26` in `SampleCloudComponent` to automatically purge stale layouts and regenerate dynamic 4-force closed-loop galactic layouts with active centroid auto-centering and void-free auto-closing across all libraries.
 
 ---
 

@@ -21,7 +21,16 @@
 *.suo
 *.VC.db
 
-# Agent/Brain metadata
+# Agent/Brain metadata & Scratch
 .gemini/
+scratch/
+__pycache__/
+*.pyc
+
+# Diagnostic visual exports in tools/
+tools/*.svg
+tools/*.html
+tools/*.png
+tools/*.jpg
 
 build_test/
