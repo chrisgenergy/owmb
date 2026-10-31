@@ -315,7 +315,7 @@ bool SampleCloudComponent::loadLayoutFromCache(uint64_t hash, const std::vector<
         return false;
       int magic = checkFis.readInt();
       int version = checkFis.readInt();
-      if (magic != 0x4F57434C || version != 17)
+      if (magic != 0x4F57434C || version != 18)
         isStaleOrCorrupt = true;
     }
     if (isStaleOrCorrupt) {
@@ -449,7 +449,7 @@ void SampleCloudComponent::saveLayoutToCache(
       return;
 
     fos->writeInt(0x4F57434C); // Magic 'OWCL'
-    fos->writeInt(17);         // Version 17 (Calibrated 0.68x Capsule Clamping & Outlier Void Elimination Across All Categories)
+    fos->writeInt(18);         // Version 18 (Universe-Wide Gravitational Tidal Arcs & Musical Bridges)
     fos->writeInt64(static_cast<juce::int64>(hash));
     fos->writeInt(static_cast<int>(calculatedNodes.size()));
     fos->writeInt(static_cast<int>(calculatedClusters.size()));
@@ -508,7 +508,7 @@ void SampleCloudComponent::saveLayoutToCache(
     bool shouldDelete = false;
     {
       juce::FileInputStream scanFis(f);
-      if (!scanFis.openedOk() || scanFis.readInt() != 0x4F57434C || scanFis.readInt() < 13) {
+      if (!scanFis.openedOk() || scanFis.readInt() != 0x4F57434C || scanFis.readInt() < 18) {
         shouldDelete = true;
       }
     }
@@ -1161,6 +1161,172 @@ SampleCloudComponent::calculateClusterLayoutInternal(
     });
   }
 
+  // Gravitational Tidal Arcs & Musical Bridges: defines cosmic affinity pairs across all categories
+  struct ClusterSpineCurve {
+    float cosA = 1.0f;
+    float sinA = 0.0f;
+    float maxA = 60.0f;
+    float capBoundaryR = 25.0f;
+    float straightHalfW = 35.0f;
+    float T_neg = 0.0f;
+    float T_pos = 0.0f;
+    float maxBendNeg = 0.0f;
+    float maxBendPos = 0.0f;
+    float T_avg = 0.0f;
+    bool isCrescent = false;
+
+    float getSpineY(float u) const {
+      float yArc = (u < 0.0f)
+          ? (T_neg * maxBendNeg * std::pow(-u, 1.8f))
+          : (T_pos * maxBendPos * std::pow(u, 1.8f));
+      float yBow = isCrescent
+          ? (-T_avg * 0.25f * std::cos(u * 1.5707963f))
+          : 0.0f;
+      return yArc + yBow;
+    }
+
+    void clampToCurvedCapsule(float &x_local, float &y_local) const {
+      float normU = (maxA > 0.001f) ? juce::jlimit(-1.0f, 1.0f, x_local / maxA) : 0.0f;
+      float curSpineY = getSpineY(normU);
+      float y_rel = y_local - curSpineY;
+
+      if (std::abs(x_local) <= straightHalfW) {
+        float normStraight = (straightHalfW > 0.001f) ? (x_local / straightHalfW) : 0.0f;
+        float localTaper = std::sqrt(std::max(0.04f, 1.0f - normStraight * normStraight * 0.25f));
+        float curR = (capBoundaryR / 0.866f) * localTaper;
+        if (std::abs(y_rel) > curR) {
+          y_rel = (y_rel > 0.0f) ? curR : -curR;
+        }
+      } else {
+        float dx = std::abs(x_local) - straightHalfW;
+        float distCapSq = dx * dx + y_rel * y_rel;
+        if (distCapSq > capBoundaryR * capBoundaryR && distCapSq > 0.0001f) {
+          float distCap = std::sqrt(distCapSq);
+          float s = capBoundaryR / distCap;
+          dx *= s;
+          x_local = (x_local > 0.0f) ? (straightHalfW + dx) : (-straightHalfW - dx);
+          y_rel *= s;
+        }
+      }
+      float finalU = (maxA > 0.001f) ? juce::jlimit(-1.0f, 1.0f, x_local / maxA) : 0.0f;
+      y_local = getSpineY(finalU) + y_rel;
+    }
+  };
+
+  static const std::unordered_map<juce::String, std::pair<juce::String, juce::String>> musicalAffinity = {
+    { "kick",              { "tom", "bass" } },
+    { "bass",              { "kick", "synth" } },
+    { "synth",             { "bass", "keys" } },
+    { "keys",              { "guitar", "synth" } },
+    { "guitar",            { "bass", "keys" } },
+    { "strings",           { "orchestral", "vocal" } },
+    { "orchestral",        { "strings", "brass" } },
+    { "brass",             { "orchestral", "synth" } },
+    { "woodwinds",         { "orchestral", "fx" } },
+    { "vocal",             { "loop", "strings" } },
+    { "snare",             { "tom", "clap" } },
+    { "clap",              { "snare", "percussion" } },
+    { "snap",              { "clap", "percussion" } },
+    { "tom",               { "kick", "percussion" } },
+    { "bongo/conga",       { "tom", "percussion" } },
+    { "percussion",        { "bongo/conga", "clave/rim" } },
+    { "clave/rim",         { "snare", "cowbell" } },
+    { "cowbell",           { "clave/rim", "hihat" } },
+    { "hihat closed",      { "snare", "hihat open" } },
+    { "hihat",             { "snare", "hihat open" } },
+    { "hihat open",        { "hihat", "cymbal" } },
+    { "tambourine shaker", { "percussion", "hihat" } },
+    { "cymbal",            { "hihat", "crash" } },
+    { "ride",              { "hihat", "cymbal" } },
+    { "crash",             { "cymbal", "fx" } },
+    { "fx",                { "cymbal", "synth" } },
+    { "loop",              { "kick", "vocal" } },
+    { "other",             { "loop", "vocal" } },
+    { "oneshot",           { "loop", "vocal" } }
+  };
+
+  std::unordered_map<juce::String, ClusterSpineCurve> clusterCurves;
+  for (const auto &pair : clusterNodeIndices) {
+    const auto &catKey = pair.first;
+    size_t count = pair.second.size();
+    auto anc = findAnchor(catKey);
+    float axisAngle = anc.angle;
+    float axisStretch = (anc.stretch > 0.01f) ? anc.stretch : 1.6f;
+    float baseRadius = std::max(40.0f, 35.0f + std::sqrt(static_cast<float>(count)) * 14.5f);
+
+    ClusterSpineCurve sc;
+    sc.cosA = std::cos(axisAngle);
+    sc.sinA = std::sin(axisAngle);
+    sc.capBoundaryR = baseRadius * 0.42f;
+    sc.maxA = baseRadius * axisStretch;
+    sc.straightHalfW = std::max(0.0f, sc.maxA - sc.capBoundaryR);
+
+    auto cPos2D = tagCenters2D[catKey];
+
+    // Identify musical affinity attractors
+    juce::String attrNeg = "";
+    juce::String attrPos = "";
+    auto affIt = musicalAffinity.find(catKey);
+    if (affIt != musicalAffinity.end()) {
+      if (tagCenters2D.find(affIt->second.first) != tagCenters2D.end())
+        attrNeg = affIt->second.first;
+      if (tagCenters2D.find(affIt->second.second) != tagCenters2D.end())
+        attrPos = affIt->second.second;
+    }
+
+    // Graceful fallback to nearest available clusters if designated attractors are absent in current library
+    if (attrNeg.isEmpty() || attrPos.isEmpty()) {
+      std::vector<std::pair<float, juce::String>> dists;
+      for (const auto &clPair : tagCenters2D) {
+        if (clPair.first == catKey) continue;
+        float dx = clPair.second.x - cPos2D.x;
+        float dy = clPair.second.y - cPos2D.y;
+        dists.push_back({ dx * dx + dy * dy, clPair.first });
+      }
+      std::sort(dists.begin(), dists.end());
+      if (attrNeg.isEmpty() && !dists.empty())
+        attrNeg = dists[0].second;
+      if (attrPos.isEmpty() && dists.size() > 1)
+        attrPos = dists[1].second;
+      else if (attrPos.isEmpty() && !dists.empty())
+        attrPos = dists[0].second;
+    }
+
+    if (attrNeg.isNotEmpty() && tagCenters2D.find(attrNeg) != tagCenters2D.end()) {
+      auto deltaNeg = tagCenters2D[attrNeg] - cPos2D;
+      float distNeg = std::sqrt(deltaNeg.x * deltaNeg.x + deltaNeg.y * deltaNeg.y);
+      if (distNeg > 1.0f) {
+        sc.T_neg = (-deltaNeg.x * sc.sinA + deltaNeg.y * sc.cosA) / distNeg;
+        if (std::abs(sc.T_neg) > 0.001f && std::abs(sc.T_neg) < 0.25f)
+          sc.T_neg = (sc.T_neg > 0.0f) ? 0.25f : -0.25f;
+        float clearance = std::max(0.0f, distNeg - baseRadius - 60.0f);
+        sc.maxBendNeg = std::min(baseRadius * 0.48f, clearance * 0.28f);
+      }
+    }
+
+    if (attrPos.isNotEmpty() && tagCenters2D.find(attrPos) != tagCenters2D.end()) {
+      auto deltaPos = tagCenters2D[attrPos] - cPos2D;
+      float distPos = std::sqrt(deltaPos.x * deltaPos.x + deltaPos.y * deltaPos.y);
+      if (distPos > 1.0f) {
+        sc.T_pos = (-deltaPos.x * sc.sinA + deltaPos.y * sc.cosA) / distPos;
+        if (std::abs(sc.T_pos) > 0.001f && std::abs(sc.T_pos) < 0.25f)
+          sc.T_pos = (sc.T_pos > 0.0f) ? 0.25f : -0.25f;
+        float clearance = std::max(0.0f, distPos - baseRadius - 60.0f);
+        sc.maxBendPos = std::min(baseRadius * 0.48f, clearance * 0.28f);
+      }
+    }
+
+    if (sc.T_neg * sc.T_pos > 0.0f && (std::abs(sc.T_neg) > 0.05f || std::abs(sc.T_pos) > 0.05f)) {
+      sc.isCrescent = true;
+      sc.T_avg = 0.5f * (sc.T_neg * sc.maxBendNeg + sc.T_pos * sc.maxBendPos);
+    } else {
+      sc.isCrescent = false;
+      sc.T_avg = 0.0f;
+    }
+
+    clusterCurves[catKey] = sc;
+  }
+
   for (auto &pair : clusterNodeIndices) {
     if (!layoutActive.load()) return {outClusters, {}};
     const auto &catKey = pair.first;
@@ -1170,13 +1336,8 @@ SampleCloudComponent::calculateClusterLayoutInternal(
 
     auto cPos3D = tagCenters3D[catKey];
     auto cPos2D = tagCenters2D[catKey];
-    auto anc = findAnchor(catKey);
-    float axisAngle = anc.angle;
-    float axisStretch = (anc.stretch > 0.01f) ? anc.stretch : 1.6f;
+    const auto &sc = clusterCurves[catKey];
     float baseRadius = std::max(40.0f, 35.0f + std::sqrt(static_cast<float>(count)) * 14.5f);
-
-    float cosA = std::cos(axisAngle);
-    float sinA = std::sin(axisAngle);
 
     for (size_t rank_i = 0; rank_i < count; ++rank_i) {
       size_t nodeIdx = indices[rank_i];
@@ -1191,26 +1352,37 @@ SampleCloudComponent::calculateClusterLayoutInternal(
       // Golden ratio low-discrepancy sequence for uniform, organic cross-axis distribution
       float cross_u = std::fmod(static_cast<float>(rank_i) * 0.6180339887f, 1.0f) * 2.0f - 1.0f;
 
-      // Elliptical boundary constraint: cluster organically tapers towards the poles
-      float max_cross = std::sqrt(std::max(0.04f, 1.0f - rank_u * rank_u * 0.85f));
-
       // Secondary acoustic feature: decay ratio (punchy/short vs sustained/long)
       float decay_u = 0.0f;
       if (node.item.decayRatio > 0.001) {
         decay_u = std::tanh((static_cast<float>(node.item.decayRatio) - 0.25f) * 2.2f) * 0.65f;
       }
       float combined_cross = juce::jlimit(-1.0f, 1.0f, cross_u * 0.75f + decay_u * 0.25f);
-      float final_cross = combined_cross * max_cross * 0.65f;
+
+      // Map rank_u across the longitudinal length of the capsule
+      float x_0 = rank_u * (sc.straightHalfW + sc.capBoundaryR * 0.88f);
+
+      // Allowed cross width at x_0 in the hemispherical capsule
+      float allowedY = sc.capBoundaryR;
+      if (std::abs(x_0) <= sc.straightHalfW) {
+        float normStraight = (sc.straightHalfW > 0.001f) ? (x_0 / sc.straightHalfW) : 0.0f;
+        float localTaper = std::sqrt(std::max(0.04f, 1.0f - normStraight * normStraight * 0.25f));
+        allowedY = (sc.capBoundaryR / 0.866f) * localTaper;
+      } else {
+        float dx = std::abs(x_0) - sc.straightHalfW;
+        allowedY = std::sqrt(std::max(0.01f, sc.capBoundaryR * sc.capBoundaryR - dx * dx));
+      }
+      float y_0 = combined_cross * allowedY * 0.85f;
 
       // Subtle high-entropy hash jitter to prevent rigid grid lines while keeping organic aesthetic
       uint32_t nodeHash = static_cast<uint32_t>(node.item.filePath.hashCode() ^ (rank_i * 2654435761u));
       uint32_t h3 = (nodeHash * 1664525u + 1013904223u) ^ 0x3c6ef372;
       uint32_t h4 = (h3 * 1664525u + 1013904223u) ^ 0xa54ff53a;
-      float jX = ((static_cast<float>(h3 % 1001) - 500.0f) / 500.0f) * 4.0f;
-      float jY = ((static_cast<float>(h4 % 1001) - 500.0f) / 500.0f) * 4.0f;
+      float jX = ((static_cast<float>(h3 % 1001) - 500.0f) / 500.0f) * 3.5f;
+      float jY = ((static_cast<float>(h4 % 1001) - 500.0f) / 500.0f) * 3.5f;
 
-      float posX_rel = (rank_u * axisStretch * cosA - final_cross * sinA) * baseRadius + jX;
-      float posY_rel = (rank_u * axisStretch * sinA + final_cross * cosA) * baseRadius + jY;
+      float x_local = x_0 + jX;
+      float y_local = y_0 + sc.getSpineY(rank_u) + jY;
 
       // 3D position with dynamic punch (Crest Factor) on Z-depth
       float dynamicZ = 0.0f;
@@ -1240,8 +1412,6 @@ SampleCloudComponent::calculateClusterLayoutInternal(
             float dist2D = std::sqrt(dir2D.x * dir2D.x + dir2D.y * dir2D.y);
             float dist3D = std::sqrt(dir3D.x * dir3D.x + dir3D.y * dir3D.y + dir3D.z * dir3D.z);
 
-            // Bounded displacement: scaled relative to the cluster's baseRadius (max 2.5% of radius, max 14px)
-            // allows subtle within-cluster directional alignment without detaching from the cluster body
             if (dist2D > 1.0f) {
               float maxPullDist2D = std::min(baseRadius * 0.025f, 14.0f);
               subTagPull2D = subTagPull2D + (dir2D / dist2D) * maxPullDist2D;
@@ -1259,28 +1429,18 @@ SampleCloudComponent::calculateClusterLayoutInternal(
 
       if (pullMatches > 0) {
         float scalePull = 1.0f / static_cast<float>(pullMatches);
-        posX_rel += subTagPull2D.x * scalePull;
-        posY_rel += subTagPull2D.y * scalePull;
+        float pX = subTagPull2D.x * scalePull;
+        float pY = subTagPull2D.y * scalePull;
+        x_local += (pX * sc.cosA + pY * sc.sinA);
+        y_local += (-pX * sc.sinA + pY * sc.cosA);
         posZ_rel += subTagPull3D.z * scalePull;
       }
 
-      // Taper-aware capsule envelope clamp: guarantees sample stays embedded inside the cluster body
-      float x_axis = posX_rel * cosA + posY_rel * sinA;
-      float y_cross = -posX_rel * sinA + posY_rel * cosA;
-      float maxA = baseRadius * axisStretch;
-      float normU = juce::jlimit(-1.0f, 1.0f, x_axis / maxA);
-      float localTaper = std::sqrt(std::max(0.04f, 1.0f - normU * normU * 0.85f));
-      float allowedCross = baseRadius * localTaper * 0.68f;
+      // Curved capsule envelope clamp: guarantees sample stays embedded inside the organic body with hemispherical caps
+      sc.clampToCurvedCapsule(x_local, y_local);
 
-      if (std::abs(x_axis) > maxA) {
-        x_axis = (x_axis > 0.0f) ? maxA : -maxA;
-      }
-      if (std::abs(y_cross) > allowedCross) {
-        y_cross = (y_cross > 0.0f) ? allowedCross : -allowedCross;
-      }
-
-      posX_rel = x_axis * cosA - y_cross * sinA;
-      posY_rel = x_axis * sinA + y_cross * cosA;
+      float posX_rel = x_local * sc.cosA - y_local * sc.sinA;
+      float posY_rel = x_local * sc.sinA + y_local * sc.cosA;
 
       node.pos2D = { cPos2D.x + posX_rel, cPos2D.y + posY_rel, 0.0f };
       node.pos3D = { cPos3D.x + posX_rel, cPos3D.y + posY_rel, cPos3D.z + posZ_rel };
@@ -1384,7 +1544,7 @@ SampleCloudComponent::calculateClusterLayoutInternal(
     }
   }
 
-  // Post-repulsion capsule envelope enforcement: guarantees zero stray outliers across all categories
+  // Post-repulsion curved capsule envelope enforcement: guarantees zero stray outliers and smooth hemispherical caps across all categories
   for (const auto &pair : clusterNodeIndices) {
     const auto &catKey = pair.first;
     const auto &indices = pair.second;
@@ -1393,43 +1553,29 @@ SampleCloudComponent::calculateClusterLayoutInternal(
 
     auto cPos2D = tagCenters2D[catKey];
     auto cPos3D = tagCenters3D[catKey];
-    auto anc = findAnchor(catKey);
-    float axisAngle = anc.angle;
-    float axisStretch = (anc.stretch > 0.01f) ? anc.stretch : 1.6f;
-    float baseRadius = std::max(40.0f, 35.0f + std::sqrt(static_cast<float>(count)) * 14.5f);
-
-    float cosA = std::cos(axisAngle);
-    float sinA = std::sin(axisAngle);
-    float maxA = baseRadius * axisStretch;
-    float invMaxA = 1.0f / maxA;
+    const auto &sc = clusterCurves[catKey];
 
     for (size_t idx : indices) {
       float relX = nodesCopy[idx].pos2D.x - cPos2D.x;
       float relY = nodesCopy[idx].pos2D.y - cPos2D.y;
 
-      float x_axis = relX * cosA + relY * sinA;
-      float y_cross = -relX * sinA + relY * cosA;
+      float x_local = relX * sc.cosA + relY * sc.sinA;
+      float y_local = -relX * sc.sinA + relY * sc.cosA;
 
-      float normU = juce::jlimit(-1.0f, 1.0f, x_axis * invMaxA);
-      float localTaper = std::sqrt(std::max(0.04f, 1.0f - normU * normU * 0.85f));
-      float allowedCross = baseRadius * localTaper * 0.68f;
+      float origX = x_local;
+      float origY = y_local;
 
-      bool clamped = false;
-      if (std::abs(x_axis) > maxA) {
-        x_axis = (x_axis > 0.0f) ? maxA : -maxA;
-        clamped = true;
-      }
-      if (std::abs(y_cross) > allowedCross) {
-        y_cross = (y_cross > 0.0f) ? allowedCross : -allowedCross;
-        clamped = true;
-      }
+      sc.clampToCurvedCapsule(x_local, y_local);
 
-      if (clamped) {
-        nodesCopy[idx].pos2D.x = cPos2D.x + (x_axis * cosA - y_cross * sinA);
-        nodesCopy[idx].pos2D.y = cPos2D.y + (x_axis * sinA + y_cross * cosA);
+      if (std::abs(x_local - origX) > 0.001f || std::abs(y_local - origY) > 0.001f) {
+        float newRelX = x_local * sc.cosA - y_local * sc.sinA;
+        float newRelY = x_local * sc.sinA + y_local * sc.cosA;
 
-        nodesCopy[idx].pos3D.x = cPos3D.x + (x_axis * cosA - y_cross * sinA);
-        nodesCopy[idx].pos3D.y = cPos3D.y + (x_axis * sinA + y_cross * cosA);
+        nodesCopy[idx].pos2D.x = cPos2D.x + newRelX;
+        nodesCopy[idx].pos2D.y = cPos2D.y + newRelY;
+
+        nodesCopy[idx].pos3D.x = cPos3D.x + newRelX;
+        nodesCopy[idx].pos3D.y = cPos3D.y + newRelY;
       }
     }
   }

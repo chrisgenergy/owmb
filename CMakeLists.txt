@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(OpenWav VERSION 1.0.0 LANGUAGES C CXX)
+project(OpenWav VERSION 1.1.7 LANGUAGES C CXX)
 
 if (APPLE)
     enable_language(OBJCXX)
@@ -59,6 +59,7 @@ option(OWMB_COPY_PLUGIN_AFTER_BUILD "Copy plugin to system folder after build" O
 # Declare Audio Plugin & Standalone application target
 juce_add_plugin(OpenWav
     COMPANY_NAME "OWMB"
+    VERSION "1.1.7"
     BUNDLE_ID "com.samplaman.owmb"
     MICROPHONE_PERMISSION_TEXT "OWMB requires microphone access for audio sample recording."
     HARDENED_RUNTIME_ENABLED TRUE

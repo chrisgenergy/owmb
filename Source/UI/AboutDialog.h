@@ -25,7 +25,7 @@ private:
   juce::ImageComponent logoComponent;
   juce::Label titleLabel { {}, "OWMB" };
   juce::Label subtitleLabel { {}, "OpenWav Media Browser" };
-  juce::Label versionLabel { {}, "Version 1.0.0" };
+  juce::Label versionLabel { {}, "Version 1.1.7" };
   juce::Label descriptionLabel;
   juce::TextButton licenseButton { "License: MIT (Open Source)" };
   juce::Label copyrightLabel { {}, "Copyright \xc2\xa9 2026 OWMB Contributors" };

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.1.7] - 2026-10-31
+
+### Added
+* **Gravitational Tidal Arcs & Musical Bridges Across All Categories (`SampleCloudComponent`)**:
+  * Replaced rigid, flat-ended geometric pills with organic, curved cosmic bodies featuring true hemispherical rounded caps with zero flat cuts.
+  * Spines dynamically bend along musical affinity vectors (e.g. Kick curving into a crescent toward Tom and Bass, Synth forming an elegant cosmic S-wave toward Keys and Bass), visually bridging related acoustic timbres.
+  * Hemispherical caps seamlessly converge longitudinal and transverse boundaries radially ($\sqrt{\Delta x^2 + y_{\text{rel}}^2} \le R_{\text{cap}}$), eliminating artificial clamping walls.
+  * Inter-cluster clearance limits ($\le 28\%$ of distance to neighbors) preserve spacious dark voids between clusters, while 28-iteration annealed intra-cluster repulsion strictly enforces zero dot-on-dot overlap ($24.5\text{px}$ minimum node spacing).
+
+### Changed
+* **Sample Cloud Binary Layout Cache Version Bump (Version 18)**:
+  * Incremented layout binary cache format version to `18` in `SampleCloudComponent` to automatically purge stale layouts and regenerate organic gravitational tidal arcs and hemispherical caps across all categories.
+
+---
+
 ## [1.1.6] - 2026-10-30
 
 ### Added
@@ -47,8 +62,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   * Replaced static zoom boundaries with true dynamic zoom scaling computed directly from real physical map bounds (`maxX`, `maxY`, `maxZ`) and viewport aspect ratio.
   * Dynamically computes `fitZoomScale` and adjusts `minZoomScale` down smoothly (down to `0.015f` for massive 87,000+ sample libraries), allowing users to zoom out to view the entire universe constellation on any display or library size without cutoff.
   * Added auto-framing on initial library load and updated `Reset View` (`resetZoomAndPan`) to target `fitZoomScale` instead of hardcoded 1.0x, ensuring newly loaded libraries immediately appear properly centered and framed.
-* **Sample Cloud Binary Layout Cache Version Bump (Version 17)**:
-  * Incremented layout binary cache format version from `14` to `17` in `SampleCloudComponent` to automatically purge stale layouts and regenerate pristine, cohesive cluster silhouettes across all categories.
 
 ---
 
